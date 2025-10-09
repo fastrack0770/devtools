@@ -1,0 +1,30 @@
+#!/bin/bash
+
+readarray -t localBranches <<< "$(git branch -l)"
+readarray -t remoteBranches <<< "$(git branch -r)"
+
+for branch in "${localBranches[@]}"
+do
+    needDelete=true
+    branch=${branch#*origin/}
+    branch=${branch#** }
+    branch=${branch#* }
+
+    for remoteBranch in "${remoteBranches[@]}"
+    do 
+        prefix=${remoteBranch:0:4}
+        if [ "${prefix}" = "HEAD" ]; then
+            continue
+        fi
+
+        remoteBranch=${remoteBranch#*origin/}
+        if [ "$branch" = "$remoteBranch" ]; then
+            needDelete=false
+            break
+        fi
+    done
+
+    if [ "$needDelete" = true ]; then
+        git branch -D $branch
+    fi
+done
