@@ -22,9 +22,9 @@ if [ ! -d "$DEST" ]; then
     exit 1
 fi
 
-mkdir -p "$DEST/.claude" "$DEST/scripts/hooks"
+mkdir -p "$DEST/.claude/skills" "$DEST/scripts/hooks"
 
-cp -r "$REPO_ROOT/.claude/skills"   "$DEST/.claude/skills"
+cp -r "$REPO_ROOT/.claude/skills/." "$DEST/.claude/skills/"
 cp    "$REPO_ROOT/scripts/hooks/"*.py "$DEST/scripts/hooks/"
 
 if [ -f "$DEST/.claude/settings.json" ]; then
