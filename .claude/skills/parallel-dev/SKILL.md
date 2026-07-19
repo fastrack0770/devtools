@@ -35,7 +35,13 @@ Invoking the skill is not an obligation to parallelize. Check in order:
 - By default the main model takes the thread with the **largest amount of work**: it has the full context of the conversation and the project, and the biggest (usually the riskiest) piece should live where the context is richest.
 - The remaining threads go to agents, but no more than (N−1) agents run at once. If there are more independent threads than that, queue the extras: as soon as one agent finishes, launch the next one from the queue.
 
-## Step 4. Launching agents
+## Step 4. Checkpoint: ask the user to run /compact
+
+At the very last moment before launching the parallel agents — when the partitioning plan, the assignment, and the agent prompts are ready — stop and end your turn. Explicitly ask the user to run `/compact` and to send a follow-up message when it is done. `/compact` is a user-side command; you cannot run it yourself, so you must pause and wait. Rationale: the launch starts a long autonomous phase (agents working + merge + build), and compacting right before it frees the context for that phase instead of wasting it on the already-digested planning discussion.
+
+Present the final plan (threads, file sets, who does what) in that same message so the user can sanity-check it before compaction. After the user returns, launch the agents immediately without re-deriving the plan.
+
+## Step 5. Launching agents
 
 Launch all agents of a wave in a single message (parallel tool calls). Agents work in the shared working tree — this is safe precisely because the file sets do not overlap; make sure the restriction is explicit. Each agent's prompt is self-contained (the agent cannot see the conversation) and must include:
 
@@ -47,7 +53,7 @@ Launch all agents of a wave in a single message (parallel tool calls). Agents wo
 
 While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own; at that moment, if the queue is not empty, launch the next agent.
 
-## Step 5. Merge and verification
+## Step 6. Merge and verification
 
 Once all threads are finished, the main model:
 
