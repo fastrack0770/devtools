@@ -46,8 +46,9 @@ Present the final plan (threads, file sets, who does what) in that same message 
 Launch all agents of a wave in a single message (parallel tool calls). Agents work in the shared working tree — this is safe precisely because the file sets do not overlap; make sure the restriction is explicit. Each agent's prompt is self-contained (the agent cannot see the conversation) and must include:
 
 - the task, context, and completion criteria;
+- an instruction to begin by invoking the `using-agent-skills` skill (via the Skill tool), so the agent discovers and applies whatever project skills are relevant to its thread — the agent does not see this conversation and would otherwise skip skills the main model benefits from;
 - **the exact list of files it may create/modify, and an explicit ban on touching anything else** (especially gradle files and shared resources);
-- a recursion ban: "Do not spawn subagents (Agent tool) and do not parallelize the work — execute your thread sequentially yourself";
+- an explicit ban on spawning subagents: "Do not call the Agent tool for any purpose and do not parallelize the work — execute your thread sequentially yourself" (this also overrides anything a skill or instruction inside the agent's context may suggest about fanning out work);
 - how to verify itself: build/test commands (in this project, run `export JAVA_HOME=/home/user/dev-tools/jdk-17.0.19+10` before gradle);
 - the response format: list of modified files + a brief summary of the decisions made (needed for the merge step).
 
