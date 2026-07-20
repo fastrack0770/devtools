@@ -15,11 +15,12 @@ Reusable, project-agnostic Claude Code setup in `.claude/` and `scripts/hooks/`.
 Drop it into any project to get the same skills, slash commands and skill-routing hooks.
 
 Contents:
-- `.claude/skills/` — methodology skills (TDD, code review, planning, security, openspec, …). Taken from https://github.com/addyosmani/agent-skills
+- `.claude/skills/` — methodology skills (TDD, code review, planning, security, openspec, …), including each skill's own `scripts/`, `references/` and templates. Taken from https://github.com/addyosmani/agent-skills
 - `.claude/commands/opsx/` — openspec slash commands (`/opsx:propose|apply|sync|archive|explore`).
 - `.claude/settings.json` — wires the two hooks below (uses `CLAUDE_PROJECT_DIR`, so it's portable).
 - `scripts/hooks/skill_suggest.py` — `UserPromptSubmit` hook; suggests relevant skills by keyword (RU/EN).
 - `scripts/hooks/opsx_skill_routing.py` — `PostToolUse` hook; reminds about phase skills when an openspec skill runs.
+- `CLAUDE.md` — base working rules (act on the skill-routing hooks; don't spawn agents outside `parallel-dev`).
 
 `.claude/settings.local.json` is machine/project-specific (permissions) — not part of the portable base.
 
@@ -29,10 +30,14 @@ Contents:
 deploy/claude-config.sh <project-dir>
 ```
 
-Copies `.claude/skills`, `.claude/settings.json` and `scripts/hooks/*.py`
-into `<project-dir>`. If the project already has a `.claude/settings.json`, it is left
-untouched — merge the `hooks` block manually. The `opsx` slash commands are not copied —
-run `openspec init` in the target project to generate them.
+Copies `.claude/skills` (with each skill's nested `scripts/`, `references/` and
+templates), `.claude/commands` (the `opsx` slash commands), `.claude/settings.json`,
+`scripts/hooks/*.py` and `CLAUDE.md` into `<project-dir>`. Executable bits on skill
+scripts are restored after the copy and any `__pycache__`/`*.pyc` is stripped. If the
+project already has a `.claude/settings.json`, it is left untouched — merge the `hooks`
+block manually. If the project already has a `CLAUDE.md`, the base rules are prepended
+to it; otherwise it is copied. Running `openspec init` in the target project will
+regenerate the `opsx` commands if you need a newer version.
 
 ---
 
