@@ -32,10 +32,23 @@ echo "Installed to $DEST"
 if gnome-extensions enable "$UUID" 2>/dev/null; then
     echo "Extension enabled."
 else
-    echo "Enable it after restarting GNOME Shell:"
-    echo "  gnome-extensions enable $UUID"
+    # On a fresh install GNOME Shell has not scanned the new extension yet, so
+    # `gnome-extensions enable` fails. Add the UUID to the gsettings key the
+    # shell reads at session start instead — the extension then activates
+    # automatically after the next login, no second install needed.
+    gsettings set org.gnome.shell enabled-extensions "$(
+        gsettings get org.gnome.shell enabled-extensions | python3 -c "
+import sys, ast
+raw = sys.stdin.read().strip()
+lst = [] if raw in ('', '@as []') else list(ast.literal_eval(raw))
+uuid = '$UUID'
+if uuid not in lst:
+    lst.append(uuid)
+print(lst)
+")"
+    echo "Extension registered as enabled."
 fi
 
 echo
 echo "IMPORTANT (Wayland): GNOME Shell only picks up a new extension after you"
-echo "log out and log back in."
+echo "log out and log back in. It will be active right after that login."
