@@ -1,0 +1,32 @@
+.cu-box {
+    spacing: 6px;
+}
+
+.cu-title {
+    font-weight: bold;
+}
+
+.cu-track {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+}
+
+.cu-fill {
+    border-radius: 4px;
+}
+
+.cu-fill-blue {
+    background-color: #3584e4;
+}
+
+.cu-fill-yellow {
+    background-color: #f5c211;
+}
+
+.cu-fill-red {
+    background-color: #e01b24;
+}
+
+.cu-fill-gray {
+    background-color: #77767b;
+}
