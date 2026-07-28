@@ -22,6 +22,7 @@ const BACKOFF_SECONDS = 300; // pause polling after the endpoint rate-limits us
 const TRACK_WIDTH = 70;
 const TRACK_HEIGHT = 8;
 const THRESHOLDS = [20, 40, 60, 80, 90, 100];
+const WINDOW_TOLERANCE_SECONDS = 300;
 const STATE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), 'claude-usage-control']);
 const STATE_PATH = GLib.build_filenamev([STATE_DIR, 'state.json']);
 
@@ -33,13 +34,12 @@ function fillClassFor(percent) {
     return 'cu-fill cu-fill-blue';
 }
 
-/* resets_at arrives with varying microseconds between polls; compare
- * windows at minute granularity. */
-function windowKey(isoString) {
+/* Unix seconds of a resets_at, or 0 if it is missing/unparseable. */
+function windowStamp(isoString) {
+    if (!isoString)
+        return 0;
     const dt = GLib.DateTime.new_from_iso8601(isoString, null);
-    if (!dt)
-        return isoString;
-    return Math.floor(dt.to_unix() / 60).toString();
+    return dt ? dt.to_unix() : 0;
 }
 
 function formatReset(isoString) {
@@ -216,10 +216,18 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
     }
 
     _maybeNotify(percent, resetsAtIso) {
-        const key = resetsAtIso ? windowKey(resetsAtIso) : '';
-        if (this._notifyState.window !== key) {
+        /* The server recomputes resets_at on every poll, so it jitters by a
+         * fraction of a second — and when it happens to sit next to a minute
+         * boundary it flips back and forth across it. Anchoring the window on
+         * an exact (or minute-truncated) timestamp made that flip look like a
+         * new window, which reset `notified` and re-sent every threshold.
+         * Only a jump of minutes is a real rollover; a response with no
+         * resets_at at all leaves the current window alone. */
+        const stamp = windowStamp(resetsAtIso);
+        if (stamp && Math.abs(stamp - this._notifyState.window) > WINDOW_TOLERANCE_SECONDS) {
             // new 5-hour window: thresholds fire again
-            this._notifyState = { window: key, notified: 0 };
+            this._notifyState = { window: stamp, notified: 0 };
+            this._saveState();
         }
 
         let highest = 0;
@@ -258,13 +266,18 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
             const [ok, bytes] = GLib.file_get_contents(STATE_PATH);
             if (ok) {
                 const state = JSON.parse(new TextDecoder().decode(bytes));
-                if (typeof state.window === 'string' && typeof state.notified === 'number')
-                    return state;
+                if (typeof state.notified === 'number') {
+                    if (typeof state.window === 'number')
+                        return state;
+                    // v1 stored the window as a minute-count string
+                    if (/^\d+$/.test(state.window))
+                        return { window: Number(state.window) * 60, notified: state.notified };
+                }
             }
         } catch (e) {
             // first run or corrupt state: start clean
         }
-        return { window: '', notified: 0 };
+        return { window: 0, notified: 0 };
     }
 
     _saveState() {

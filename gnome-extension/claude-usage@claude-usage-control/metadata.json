@@ -3,5 +3,5 @@
   "name": "Claude Usage",
   "description": "Claude Code usage bar in the top panel: share of the 5-hour session limit used (blue < 75%, yellow 75-90%, red 90-100%), weekly and per-model quota used, threshold notifications and limit reset time.",
   "shell-version": ["42"],
-  "version": 1
+  "version": 2
 }
