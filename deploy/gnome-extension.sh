@@ -52,3 +52,20 @@ fi
 echo
 echo "IMPORTANT (Wayland): GNOME Shell only picks up a new extension after you"
 echo "log out and log back in. It will be active right after that login."
+
+# The indicator reads the OAuth token the claude CLI stores in
+# ~/.claude/.credentials.json. Without an installed, logged-in CLI it has
+# nothing to show, so say that here instead of leaving an error in the panel.
+CREDS="$HOME/.claude/.credentials.json"
+if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; then
+    echo
+    echo "WARNING: the claude CLI was not found — the indicator has no data source."
+    echo "Install it and log in:"
+    echo "  curl -fsSL https://claude.ai/install.sh | bash"
+    echo "  claude          # then run /login inside the CLI"
+elif [ ! -f "$CREDS" ]; then
+    echo
+    echo "WARNING: no credentials at $CREDS."
+    echo "Log in once so the indicator can read your usage:"
+    echo "  claude          # then run /login inside the CLI"
+fi

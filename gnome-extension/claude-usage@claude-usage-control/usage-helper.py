@@ -309,6 +309,15 @@ def refresh_token():
                 headers={"Content-Type": "application/json"},
             )
         except urllib.error.HTTPError as e:
+            # The body carries the reason; invalid_grant means the refresh
+            # token is dead (expired, revoked, or already rotated on another
+            # machine) and only a new `claude /login` brings it back.
+            try:
+                detail = json.loads(e.read().decode()).get("error")
+            except (ValueError, OSError):
+                detail = None
+            if detail == "invalid_grant":
+                fail("refresh_token_expired")
             fail("refresh_http_%d" % e.code)
         except OSError:
             fail("network")

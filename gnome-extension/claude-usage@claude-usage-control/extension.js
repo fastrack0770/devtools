@@ -26,6 +26,23 @@ const WINDOW_TOLERANCE_SECONDS = 300;
 const STATE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), 'claude-usage-control']);
 const STATE_PATH = GLib.build_filenamev([STATE_DIR, 'state.json']);
 
+/* Helper error codes the user can actually act on. Anything absent falls
+ * back to the raw code, which is still enough to grep the helper for. */
+const ERROR_MESSAGES = {
+    no_credentials: 'Not logged in — run: claude /login',
+    not_logged_in: 'Not logged in — run: claude /login',
+    no_refresh_token: 'Session expired — run: claude /login',
+    refresh_token_expired: 'Session expired — run: claude /login',
+    unauthorized: 'Session expired — run: claude /login',
+    network: 'No connection to the usage endpoint',
+    helper: 'Helper failed to start',
+    parse: 'Unexpected helper output',
+};
+
+function errorMessage(reason) {
+    return ERROR_MESSAGES[reason] || reason;
+}
+
 function fillClassFor(percent) {
     if (percent >= 90)
         return 'cu-fill cu-fill-red';
@@ -210,7 +227,7 @@ class ClaudeUsageIndicator extends PanelMenu.Button {
         this._fill.set_size(TRACK_WIDTH, TRACK_HEIGHT);
         this._fill.style_class = 'cu-fill cu-fill-gray';
         this._infoLabel.text = '—';
-        this._sessionItem.label.text = 'No data (%s)'.format(reason);
+        this._sessionItem.label.text = errorMessage(reason);
         this._updatedItem.label.text =
             'Error at %s'.format(GLib.DateTime.new_now_local().format('%H:%M:%S'));
     }

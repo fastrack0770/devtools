@@ -30,6 +30,14 @@ Every number is the **used** share of a limit, not the remainder.
   `shell-version` in `metadata.json` if you want to try.
 - `python3` (standard library only, no third-party packages).
 - A logged-in Claude Code CLI (`~/.claude/.credentials.json` must exist).
+  The indicator has no other data source, so install and log in first:
+
+  ```bash
+  curl -fsSL https://claude.ai/install.sh | bash
+  ```
+
+  then run `claude` and `/login` inside it. The installer checks for this and
+  warns if the CLI is missing.
 
 ## Install
 
