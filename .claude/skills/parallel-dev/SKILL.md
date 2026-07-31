@@ -26,7 +26,7 @@ Before launching any agents, build a partitioning plan:
 1. List every file the task will touch (both created and modified).
 2. Group the work into threads with non-overlapping file sets. Pay special attention to "hub" files that almost every task edits: the version catalog and `build.gradle.kts`, DI modules, resources/strings, navigation, shared data models. Two pieces of work that edit the same hub belong to one thread; alternatively, defer all hub edits into `deferred_hub_edits` and let the main model apply them during the merge step.
 3. Estimate the size of each thread (number of files and complexity of the edits).
-4. **Write the plan to disk** as `parallel-dev-plan.json` in the session scratchpad directory (listed in your system prompt; fall back to `/tmp` if none). The plan file is the single source of truth for the whole run: unlike the conversation, it survives `/compact` verbatim. Keep it updated for the entire run — statuses, agent summaries, actual files.
+4. **Write the plan to disk** as `parallel-dev-plan.json` in the session scratchpad directory (listed in your system prompt; fall back to `/tmp` if none). The plan file is the single source of truth for the whole run: unlike the conversation, it survives a context reset verbatim. Keep it updated for the entire run — statuses, agent summaries, actual files.
 
 Plan format (statuses: `pending` / `running` / `done`; `executor`: `main` / `agent`):
 
@@ -83,16 +83,14 @@ Invoking the skill is not an obligation to parallelize. Check in order:
 - The remaining threads go to agents, but no more than (N−1) agents run at once. If there are more independent threads than that, queue the extras: as soon as one agent finishes, launch the next one from the queue.
 - Build each agent's prompt from `references/agent-prompt-template.md`, filling every placeholder (task context, allowed files, contracts, verification commands), and store the finished prompts in the plan file (`threads[].prompt`). The template carries the non-negotiables — `using-agent-skills` bootstrap, the file boundary, the subagent ban that overrides any skill's fan-out suggestions, and the FILES CHANGED / SUMMARY / DEVIATIONS response format — do not strip them when filling it in.
 
-## Step 4. Checkpoint: ask the user to run /compact
+## Step 4. Checkpoint: present the final plan
 
-At the very last moment before launching the parallel agents — when the plan file is written and validated and the agent prompts are stored in it — stop and end your turn. Explicitly ask the user to run `/compact` and to send a follow-up message when it is done. `/compact` is a user-side command; you cannot run it yourself, so you must pause and wait. Rationale: the launch starts a long autonomous phase (agents working + merge + build), and compacting right before it frees the context for that phase instead of wasting it on the already-digested planning discussion.
+At the very last moment before launching the parallel agents — when the plan file is written and validated and the agent prompts are stored in it — present the final plan to the user. This message must contain:
 
-That same final message must contain:
+- a summary of the final plan (threads, file sets, who does what) so the user can sanity-check it;
+- **a markdown link to the plan file** (absolute path) — mandatory, no exceptions: the plan file is the durable source of truth for the whole run.
 
-- a summary of the final plan (threads, file sets, who does what) so the user can sanity-check it before compaction;
-- **a markdown link to the plan file** (absolute path) — mandatory, no exceptions: after compaction the plan is re-read from this file, not reconstructed from the conversation summary.
-
-After the user returns, re-read the plan file (and this SKILL.md if its instructions are no longer verbatim in context), then launch the first wave immediately without re-deriving anything.
+Then launch the first wave immediately without re-deriving anything.
 
 ## Step 5. Launching agents
 
@@ -111,10 +109,9 @@ The main model cannot measure its context precisely, but it can track it approxi
 
 1. Stop launching new agents — the queue stays frozen, even if slots are free.
 2. Let the already-running agents finish and record their results into the plan file.
-3. End the turn and ask the user to run `/compact` (same mechanics as Step 4). The plan file already holds the durable state; the message must still include the markdown link to it plus the current state of your own thread.
-4. After the user returns, re-read the plan file (and this SKILL.md if needed), then resume the queue.
+3. Keep the plan file current — statuses, summaries, and `actual_files` for every finished thread, plus the current state of your own thread — so the durable state survives a context reset. Then resume the queue.
 
-Rationale: each agent's results, the merge, and the final build still have to fit in the remaining context; launching new agents into a nearly-full window risks losing their output to mid-flight compaction.
+Rationale: each agent's results, the merge, and the final build still have to fit in the remaining context; launching new agents into a nearly-full window risks losing their output. The plan file holds the durable state regardless.
 
 ## Step 6. Merge and verification
 
