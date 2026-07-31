@@ -6,3 +6,10 @@
 .claude/commands/opsx/
 
 __pycache__
+*.py[cod]
+
+# GNOME extension — never commit credential-bearing or local scratch files
+*.bak-claude-usage
+.credentials.json
+state.json
+fake_percent

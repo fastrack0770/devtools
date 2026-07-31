@@ -1,11 +1,24 @@
 # devtools
 
-Two independent toolkits:
+Three independent toolkits:
 
-- **[Claude Code base config](#claude-code-base-config)** — reusable Claude Code setup for any project.
 - **[Bash scripts](#bash-scripts)** — small git/workspace helpers for your terminal.
+- **[Claude Code base config](#claude-code-base-config)** — reusable Claude Code setup for any project.
+- **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code usage indicator in the Ubuntu top panel.
 
-Each ships its own deploy script in `deploy/`.
+Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
+
+## Install
+
+```sh
+make                                        # list the targets
+make bash-scripts                           # 1. console utilities
+make claude-config PROJECT=/path/to/project # 2. Claude Code configuration
+make gnome-extension                        # 3. Ubuntu extension
+```
+
+`make install` runs all three at once; it only deploys the Claude Code config when
+`PROJECT` is set (`make install PROJECT=/path/to/project`). Every target is idempotent.
 
 ---
 
@@ -63,3 +76,27 @@ deploy/bash-scripts.sh
 Adds `bash/bin` to your `PATH` (via `~/.bashrc` or `~/.zshrc`) so the scripts are
 callable by name in any terminal. Idempotent. Run `source ~/.bashrc` (or open a new
 terminal) afterwards.
+
+---
+
+# GNOME Shell extension
+
+`gnome-extension/claude-usage@claude-usage-control` — a top-panel indicator showing how
+much of your Claude Code usage limits you have consumed: a progress bar for the current
+5-hour session (blue < 75 %, yellow 75–90 %, red 90–100 %), the countdown to the limit
+reset, the used share of the model-scoped weekly quota, and threshold notifications.
+
+Requires GNOME Shell 42 (Ubuntu 22.04), `python3` and a logged-in Claude Code CLI. The
+helper reads (and, when the token expires, refreshes) `~/.claude/.credentials.json` —
+see [gnome-extension/README.md](gnome-extension/README.md) for the data source, the
+security notes and debugging commands.
+
+## Deploy
+
+```sh
+deploy/gnome-extension.sh
+```
+
+Copies the extension into `~/.local/share/gnome-shell/extensions/` and enables it.
+**Log out and log back in** afterwards — on Wayland GNOME Shell cannot pick up a new
+extension in place. Remove it with `make uninstall-gnome-extension`.
