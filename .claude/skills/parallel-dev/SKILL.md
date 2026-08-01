@@ -5,7 +5,7 @@ description: Parallel development orchestration — splits implementation work i
 
 # Parallel development
 
-Rules for dividing implementation work between subagents (Agent tool) and the main model. The goal is speedup without conflicting edits, so the core invariant is: **the file sets of the threads must not overlap**.
+Rules for dividing implementation work between subagents (Agent tool) and the main model. Each agent thread runs in its **own git worktree** (branch `pd/<thread-id>`), so every thread can build and run tests independently; the main model works in the main working tree. The core invariant stays: **the file sets of the threads must not overlap** — with worktrees it is what guarantees conflict-free merges of the thread branches.
 
 Bundled resources (paths relative to this skill's directory, `.claude/skills/parallel-dev/`):
 
@@ -28,7 +28,7 @@ Before launching any agents, build a partitioning plan:
 3. Estimate the size of each thread (number of files and complexity of the edits).
 4. **Write the plan to disk** as `parallel-dev-plan.json` in the session scratchpad directory (listed in your system prompt; fall back to `/tmp` if none). The plan file is the single source of truth for the whole run: unlike the conversation, it survives a context reset verbatim. Keep it updated for the entire run — statuses, agent summaries, actual files.
 
-Plan format (statuses: `pending` / `running` / `done`; `executor`: `main` / `agent`):
+Plan format (statuses: `pending` / `running` / `done`; `executor`: `main` / `agent`; `worktree` and `branch` are filled in at launch time, `null` until then):
 
 ```json
 {
@@ -49,6 +49,8 @@ Plan format (statuses: `pending` / `running` / `done`; `executor`: `main` / `age
       "description": "...",
       "files": ["app/src/main/java/dev/caluni/ui/login/LoginScreen.kt"],
       "prompt": "full agent prompt built from the template",
+      "worktree": null,
+      "branch": null,
       "summary": null,
       "actual_files": []
     }
@@ -81,7 +83,8 @@ Invoking the skill is not an obligation to parallelize. Check in order:
 
 - By default the main model takes the thread with the **largest amount of work**: it has the full context of the conversation and the project, and the biggest (usually the riskiest) piece should live where the context is richest.
 - The remaining threads go to agents, but no more than (N−1) agents run at once. If there are more independent threads than that, queue the extras: as soon as one agent finishes, launch the next one from the queue.
-- Build each agent's prompt from `references/agent-prompt-template.md`, filling every placeholder (task context, allowed files, contracts, verification commands), and store the finished prompts in the plan file (`threads[].prompt`). The template carries the non-negotiables — `using-agent-skills` bootstrap, the file boundary, the subagent ban that overrides any skill's fan-out suggestions, and the FILES CHANGED / SUMMARY / DEVIATIONS response format — do not strip them when filling it in.
+- Build each agent's prompt from `references/agent-prompt-template.md`, filling every placeholder (task context, worktree path, allowed files, contracts, verification commands), and store the finished prompts in the plan file (`threads[].prompt`). The template carries the non-negotiables — `using-agent-skills` bootstrap, the worktree confinement, the file boundary, the subagent ban that overrides any skill's fan-out suggestions, and the FILES CHANGED / SUMMARY / DEVIATIONS response format — do not strip them when filling it in.
+- Launch every agent on **Opus**: pass `model: "opus"` in each Agent tool call.
 
 ## Step 4. Checkpoint: present the final plan
 
@@ -97,31 +100,37 @@ Then launch the first wave immediately without re-deriving anything.
 Immediately before the launch:
 
 1. Re-validate the partition (the plan may have been edited): `check_partition.py check <plan>`.
-2. Record pre-existing working-tree changes so the final audit can exclude them: `check_partition.py snapshot <plan>`.
+2. **Ensure a clean baseline.** Worktrees branch off HEAD and do not see uncommitted changes in the main tree. If `git status` is not clean, commit the work in progress first; do not launch agents from a dirty tree.
+3. **Create a worktree for each agent thread of the wave:**
 
-Launch all agents of a wave in a single message (parallel tool calls), each with its prepared prompt from the plan file. Agents work in the shared working tree — this is safe precisely because the file sets do not overlap; the template makes the restriction explicit to each agent.
+   ```
+   git worktree add <scratchpad>/wt-<thread-id> -b pd/<thread-id>
+   ```
 
-While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own. When an agent finishes: record its status, summary, and reported `FILES CHANGED` into the plan file (`status`, `summary`, `actual_files`); then, if the queue is not empty and the context guard allows, launch the next agent.
+   Record the resulting path and branch into the plan file (`threads[].worktree`, `threads[].branch`). The main model does not get a worktree — it works in the main tree.
 
-### Context guard (25% rule)
+Launch all agents of a wave in a single message (parallel tool calls), each with `model: "opus"` and its prepared prompt from the plan file. Each agent works only inside its own worktree — the prompt states the worktree path as the repository root, and the file boundary keeps the eventual branch merges conflict-free. A fresh worktree also gives exact attribution: every change in it is that agent's work, no baseline bookkeeping needed.
 
-The main model cannot measure its context precisely, but it can track it approximately by estimating how much of the window the conversation has consumed. When you estimate that **25% or more of the context window has been consumed** (and in any case if a harness low-context warning appears):
+While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own. When an agent finishes: record its status, summary, and reported `FILES CHANGED` into the plan file (`status`, `summary`, `actual_files`); then, if the queue is not empty, create the next thread's worktree and launch its agent.
 
-1. Stop launching new agents — the queue stays frozen, even if slots are free.
-2. Let the already-running agents finish and record their results into the plan file.
-3. Keep the plan file current — statuses, summaries, and `actual_files` for every finished thread, plus the current state of your own thread — so the durable state survives a context reset. Then resume the queue.
+### Resource cost of parallel builds
 
-Rationale: each agent's results, the merge, and the final build still have to fit in the remaining context; launching new agents into a nearly-full window risks losing their output. The plan file holds the durable state regardless.
+Each worktree pays for its own cold build: `build/` directories are per-worktree and must not be shared. The user-level Gradle cache (`~/.gradle`) is shared between worktrees automatically and that is safe — leave it alone. Still, N concurrent cold builds are expensive in CPU, memory, and wall-clock time: factor this into Step 2 when deciding how many threads are worth it, and prefer fewer, larger threads on a resource-constrained machine.
 
 ## Step 6. Merge and verification
 
 Once all threads are finished, the main model:
 
-1. Runs the boundary audit: `check_partition.py audit <plan>` — it flags files changed outside the plan and per-thread violations of `actual_files` against the allowed lists. Investigate every violation before anything else.
-2. Reviews each agent's diff (`git diff` over its files): conformance to the task, the contracts, and the project style; reconciles any deviations the agents flagged.
-3. Applies the deferred "hub" edits (DI registration, strings/resources, navigation, gradle).
-4. Runs the full build and the test suite.
-5. Reports to the user: how the work was split into threads, what each one did, audit results, and the build/test results.
+1. Commits its own thread in the main tree (a merge over uncommitted changes is fragile even with disjoint file sets — don't rely on it).
+2. Then, for each agent worktree in turn:
+   1. Runs the boundary audit against that worktree: `check_partition.py audit <plan> --repo <worktree>`. Agents leave their changes uncommitted, so the status-based audit sees exactly this agent's work; files of other threads show up as "planned but unchanged", and the script's "no baseline" warning is expected — a fresh worktree needs none. Investigate every violation before proceeding.
+   2. Reviews the agent's diff (`git diff` in the worktree): conformance to the task, the contracts, and the project style; reconciles any deviations the agent flagged.
+   3. Commits the reviewed changes onto the thread branch (inside the worktree), then merges it into the working branch from the main tree: `git merge pd/<thread-id>`. Disjoint file sets make this merge conflict-free; a conflict here means the audit missed something — stop and investigate.
+   4. Removes the worktree: `git worktree remove <worktree>`.
+3. After the last merge, runs `git worktree prune`.
+4. Applies the deferred "hub" edits (DI registration, strings/resources, navigation, gradle).
+5. Runs the full build and the test suite in the main tree.
+6. Reports to the user: how the work was split into threads, what each one did, audit results, and the build/test results.
 
 ## If you are a subagent yourself
 
