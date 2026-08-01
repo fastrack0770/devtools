@@ -1,6 +1,6 @@
 ---
 name: parallel-dev
-description: Parallel development orchestration — splits implementation work into threads with non-overlapping file sets, hands some threads to subagents while the main model takes the largest thread itself. Invoke on /parallel-dev, and also whenever the user asks to "parallelize", "split the work", "use multiple agents", "fan out the work", or when implementing a large change with independent groups of files (several screens, layers, or modules at once). Accepts an optional argument — the number of threads (default 2, one agent + the main model).
+description: Parallel development orchestration — splits implementation work into threads with non-overlapping file sets, hands some threads to subagents while the main model takes the largest thread itself. Invoke on /parallel-dev, and also whenever the user asks to "parallelize", "split the work", "use multiple agents", "fan out the work", or when implementing a large change with independent groups of files (several screens, layers, or modules at once). Accepts an optional argument — the number of threads (default 5, four agents + the main model).
 ---
 
 # Parallel development
@@ -16,8 +16,8 @@ Bundled resources (paths relative to this skill's directory, `.claude/skills/par
 
 `/parallel-dev [N] [task description]`
 
-- `N` — number of threads, default **2**.
-- N threads = (N−1) concurrent agents + one thread for the main model. Example: N=5 → up to 4 agents in parallel, the fifth thread is done by the main model itself.
+- `N` — number of threads, default **5**.
+- N threads = (N−1) concurrent agents + one thread for the main model. Example: the default N=5 → up to 4 agents in parallel, the fifth thread is done by the main model itself.
 
 ## Step 1. Partitioning and the plan file
 
