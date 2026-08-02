@@ -10,7 +10,7 @@ Rules for dividing implementation work between subagents (Agent tool) and the ma
 Bundled resources (paths relative to this skill's directory, `.claude/skills/parallel-dev/`):
 
 - `scripts/check_partition.py` — deterministic validation of the partition and audit of the agents' actual changes. Use it instead of eyeballing file lists.
-- `scripts/plan_tool.py` — mechanical bookkeeping of the run: `build` assembles agent prompts from a shared template plus per-thread fields, `launch`/`done`/`fail` record thread state (`done` parses the agent's FILES CHANGED / SUMMARY / DEVIATIONS report from stdin or `--report`), `status` prints the run at a glance, `restore` recovers the plan from the durable backup. Every mutating command mirrors the plan into `<repo>/.git/parallel-dev/` — the scratchpad does NOT survive a process restart, the `.git` copy does. Use these instead of hand-editing the JSON.
+- `scripts/plan_tool.py` — mechanical bookkeeping of the run: `build` assembles agent prompts from a shared template plus per-thread fields (`--rebuild <id>` reassembles after a `task` edit), `launch` records thread state AND creates the worktree itself when `--worktree` is omitted (path `<plan-dir>/wt-<id>`, branch `pd/<id>`, seeded with the plan's `worktree_seed_files` — put `local.properties` and similar untracked per-machine config there), `done` parses the agent's FILES CHANGED / SUMMARY / DEVIATIONS report (stdin or `--report`) and snapshots the worktree's uncommitted diff into `.git/parallel-dev/patches/<id>.patch` so a scratchpad wipe cannot eat finished work, `fail`/`reset` handle a relaunch (reset returns the thread to pending and clears its prompt), `merged --commit <sha>` records what already landed in the working branch, `status` prints the run at a glance (`-v` for per-thread detail, `--no-gate` for use in `&&` chains), `mirror` re-syncs the durable backup after a hand edit of the JSON, `restore` recovers the plan from that backup (refuses to clobber a newer hand-edited plan without `--force`). Every mutating command mirrors the plan into `<repo>/.git/parallel-dev/` — the scratchpad does NOT survive a process restart, the `.git` copy does. Use these instead of hand-editing the JSON; if you must hand-edit, run `mirror` right after.
 - `references/agent-prompt-template.md` — the template every agent prompt is built from. Read it when composing prompts; `plan_tool.py build` carries its non-negotiable blocks (file boundary, contracts preamble) so per-thread you author only the task body.
 
 ## Arguments
@@ -57,6 +57,7 @@ Plan format (statuses: `pending` / `running` / `done` / `failed`; `executor`: `m
     }
   ],
   "deferred_hub_edits": ["app/src/main/res/values/strings.xml"],
+  "worktree_seed_files": ["local.properties"],
   "contracts": [
     {
       "id": "auth-repo",
@@ -106,17 +107,11 @@ Immediately before the launch:
 
 1. Re-validate the partition (the plan may have been edited): `check_partition.py check <plan>`.
 2. **Ensure a clean baseline.** Worktrees branch off HEAD and do not see uncommitted changes in the main tree. If `git status` is not clean, commit the work in progress first; do not launch agents from a dirty tree.
-3. **Create a worktree for each agent thread of the wave:**
-
-   ```
-   git worktree add <scratchpad>/wt-<thread-id> -b pd/<thread-id>
-   ```
-
-   The path and branch are recorded into the plan at launch time (see the `launch` command below). The main model does not get a worktree — it works in the main tree.
+3. **Worktrees are created by `plan_tool.py launch` itself** — with `--worktree` omitted it runs `git worktree add <plan-dir>/wt-<thread-id> -b pd/<thread-id>` off the repo's current HEAD, copies the plan's `worktree_seed_files` in (untracked per-machine config like `local.properties` — without it every gradle thread rediscovers the missing SDK path), and records path and branch into the plan. Pass `--worktree` only to adopt a pre-existing worktree. The main model does not get a worktree — it works in the main tree.
 
 Launch all agents of a wave in a single message (parallel tool calls), each with `model: "opus"` and its bootstrap prompt. Each agent works only inside its own worktree — the prompt states the worktree path as the repository root, and the file boundary keeps the eventual branch merges conflict-free. A fresh worktree also gives exact attribution: every change in it is that agent's work, no baseline bookkeeping needed.
 
-While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own. Right after each launch, record it: `plan_tool.py launch <plan> <thread-id> <agent-id> --worktree <path> --branch pd/<thread-id>`. When an agent finishes, pipe its final report into `plan_tool.py done <plan> <thread-id>` (stdin or `--report <file>`) — it parses FILES CHANGED / SUMMARY / DEVIATIONS into the plan itself; if the agent was cancelled or returned unusable work, record it with `plan_tool.py fail <plan> <thread-id> --note <why>` (its worktree can be reset and the thread relaunched). Then, if the queue is not empty, create the next thread's worktree and launch its agent. `plan_tool.py status <plan>` shows the run at a glance and exits non-zero while anything is still pending or running.
+While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own. Right after each Agent call returns, record it: `plan_tool.py launch <plan> <thread-id> <agent-id>` (this is also what creates the worktree — run it BEFORE the Agent call when the agent needs the worktree to exist, i.e. always: launch first, then spawn). When an agent finishes, pipe its final report into `plan_tool.py done <plan> <thread-id>` (stdin or `--report <file>`) — it parses FILES CHANGED / SUMMARY / DEVIATIONS into the plan itself and snapshots the worktree's uncommitted diff to `.git/parallel-dev/patches/<thread-id>.patch`, the insurance that lets a wiped scratchpad be recovered with `git apply`. If the agent was cancelled or returned unusable work: `plan_tool.py fail <plan> <thread-id> --note <why>`, then for a relaunch `plan_tool.py reset <plan> <thread-id>` → edit the thread's `task` if needed → `build --rebuild <thread-id>` → `launch`. Then, if the queue is not empty, launch the next thread. `plan_tool.py status <plan>` shows the run at a glance and exits non-zero while anything is still pending or running (`--no-gate` when that exit code would break a `&&` chain, `-v` for per-thread detail).
 
 ### Resource cost of parallel builds
 
@@ -131,7 +126,8 @@ Once `plan_tool.py status <plan>` shows every thread finished (exit code 0), the
    1. Runs the boundary audit against that worktree: `check_partition.py audit <plan> --repo <worktree>`. Agents leave their changes uncommitted, so the status-based audit sees exactly this agent's work; files of other threads show up as "planned but unchanged", and the script's "no baseline" warning is expected — a fresh worktree needs none. Investigate every violation before proceeding.
    2. Reviews the agent's diff (`git diff` in the worktree): conformance to the task, the contracts, and the project style; reconciles any deviations the agent flagged.
    3. Commits the reviewed changes onto the thread branch (inside the worktree), then merges it into the working branch from the main tree: `git merge pd/<thread-id>`. Disjoint file sets make this merge conflict-free; a conflict here means the audit missed something — stop and investigate.
-   4. Removes the worktree: `git worktree remove <worktree>`.
+   4. Records the merge so a recovery never re-derives it from the git log: `plan_tool.py merged <plan> <thread-id> --commit $(git rev-parse HEAD)`.
+   5. Removes the worktree: `git worktree remove <worktree>`.
 3. After the last merge, runs `git worktree prune`.
 4. Applies the deferred "hub" edits (DI registration, strings/resources, navigation, gradle).
 5. Runs the full build and the test suite in the main tree.

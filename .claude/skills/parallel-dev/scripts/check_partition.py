@@ -86,6 +86,8 @@ def cmd_check(plan, args):
             print(f"OVERLAP between '{a}' and deferred_hub_edits:")
             for f in sorted(clash):
                 print(f"  {f}")
+            print("  hint: hub files live in deferred_hub_edits ONLY — remove them from the "
+                  "thread's files; the orchestrator applies them at the merge step.")
     print("check: OK — all thread file sets are disjoint" if ok
           else "check: FAILED — fix the partition before launching agents")
     return 0 if ok else 1
@@ -114,29 +116,36 @@ def cmd_audit(plan, args):
     allowed |= {norm(f) for f in plan.get("deferred_hub_edits", [])}
     changed = changed_files(args.repo) - baseline
 
-    ok = True
+    # Collect first, print in labeled sections: a FAILED audit must read unambiguously —
+    # during a real run the violation lines and the informational tail were mistaken
+    # for one another.
     unclaimed = sorted(changed - allowed)
-    if unclaimed:
-        ok = False
-        print("VIOLATION: files changed outside the plan:")
-        for f in unclaimed:
-            print(f"  {f}")
+    boundary = []  # (thread-id, [files])
     for t in plan["threads"]:
         tid = t.get("id", "?")
         actual = {norm(f) for f in t.get("actual_files") or []}
         extra = sorted(actual - by_thread.get(tid, set()))
         if extra:
-            ok = False
-            print(f"VIOLATION: thread '{tid}' reported files outside its boundary:")
-            for f in extra:
-                print(f"  {f}")
+            boundary.append((tid, extra))
     untouched = sorted(allowed - changed - baseline)
+    ok = not unclaimed and not boundary
+
+    if unclaimed:
+        print(f"VIOLATIONS — changed outside the plan ({len(unclaimed)}):")
+        for f in unclaimed:
+            print(f"  {f}")
+    for tid, extra in boundary:
+        print(f"VIOLATIONS — thread '{tid}' reported outside its boundary ({len(extra)}):")
+        for f in extra:
+            print(f"  {f}")
     if untouched:
-        print("info: planned but unchanged files (may be fine):")
+        print(f"PLANNED, UNCHANGED ({len(untouched)}) — informational, NOT a violation "
+              "(another thread's files or work that turned out unnecessary):")
         for f in untouched:
             print(f"  {f}")
+    total = len(unclaimed) + sum(len(e) for _, e in boundary)
     print("audit: OK — all changes stay within the plan" if ok
-          else "audit: FAILED — resolve violations before merging")
+          else f"audit: FAILED — {total} violation(s) above; resolve before merging")
     return 0 if ok else 1
 
 
