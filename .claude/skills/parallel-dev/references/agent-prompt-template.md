@@ -2,6 +2,8 @@
 
 Build every parallel-dev agent prompt from this template. Replace each `{{placeholder}}`; drop a section only when it is genuinely empty (e.g. no contracts touch this thread). The non-negotiable blocks — skills bootstrap, worktree confinement, file boundary, restrictions, response format — stay in every prompt.
 
+When assembling prompts with `scripts/plan_tool.py build`, the template maps onto the plan like this: the opening paragraph plus the `## Task` heading become `prompt_template.intro`; the Before-you-start, Restrictions, and Response-format sections become `prompt_template.tail`; the file-boundary and contracts blocks are spliced in by the tool; the Verification section travels in each thread's `verify` field (heading included). The intro is shared between threads, so it cannot carry a per-thread worktree path — reword its worktree sentence to "your dedicated git worktree path is stated at the top of the Task section" and start each thread's `task` with that path.
+
 ---
 
 You are implementing one thread of a larger parallel development effort. Your dedicated git worktree is at `{{worktree_path}}` — treat it as the repository root for everything you do: read, edit, and run all commands there, never in the original repository checkout. Other executors are working on other threads in their own worktrees; the branches merge cleanly only if every thread stays within its declared file set, so treat yours as a hard wall.

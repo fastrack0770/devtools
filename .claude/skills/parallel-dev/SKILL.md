@@ -10,7 +10,8 @@ Rules for dividing implementation work between subagents (Agent tool) and the ma
 Bundled resources (paths relative to this skill's directory, `.claude/skills/parallel-dev/`):
 
 - `scripts/check_partition.py` — deterministic validation of the partition and audit of the agents' actual changes. Use it instead of eyeballing file lists.
-- `references/agent-prompt-template.md` — the template every agent prompt is built from. Read it when composing prompts.
+- `scripts/plan_tool.py` — mechanical bookkeeping of the run: `build` assembles agent prompts from a shared template plus per-thread fields, `launch`/`done`/`fail` record thread state (`done` parses the agent's FILES CHANGED / SUMMARY / DEVIATIONS report from stdin or `--report`), `status` prints the run at a glance, `restore` recovers the plan from the durable backup. Every mutating command mirrors the plan into `<repo>/.git/parallel-dev/` — the scratchpad does NOT survive a process restart, the `.git` copy does. Use these instead of hand-editing the JSON.
+- `references/agent-prompt-template.md` — the template every agent prompt is built from. Read it when composing prompts; `plan_tool.py build` carries its non-negotiable blocks (file boundary, contracts preamble) so per-thread you author only the task body.
 
 ## Arguments
 
@@ -26,9 +27,9 @@ Before launching any agents, build a partitioning plan:
 1. List every file the task will touch (both created and modified).
 2. Group the work into threads with non-overlapping file sets. Pay special attention to "hub" files that almost every task edits: the version catalog and `build.gradle.kts`, DI modules, resources/strings, navigation, shared data models. Two pieces of work that edit the same hub belong to one thread; alternatively, defer all hub edits into `deferred_hub_edits` and let the main model apply them during the merge step.
 3. Estimate the size of each thread (number of files and complexity of the edits).
-4. **Write the plan to disk** as `parallel-dev-plan.json` in the session scratchpad directory (listed in your system prompt; fall back to `/tmp` if none). The plan file is the single source of truth for the whole run: unlike the conversation, it survives a context reset verbatim. Keep it updated for the entire run — statuses, agent summaries, actual files.
+4. **Write the plan to disk** as `parallel-dev-plan.json` in the session scratchpad directory (listed in your system prompt; fall back to `/tmp` if none). The plan file is the single source of truth for the whole run: unlike the conversation, it survives a context reset verbatim. Keep it updated for the entire run — statuses, agent summaries, actual files — through `plan_tool.py` (`launch`/`done`/`fail`), which also mirrors every write into `<repo>/.git/parallel-dev/`; after a process restart or scratchpad wipe, `plan_tool.py restore <plan>` brings the run back instead of you re-deriving it from memory.
 
-Plan format (statuses: `pending` / `running` / `done`; `executor`: `main` / `agent`; `worktree` and `branch` are filled in at launch time, `null` until then):
+Plan format (statuses: `pending` / `running` / `done` / `failed`; `executor`: `main` / `agent`; `worktree` and `branch` are filled in at launch time, `null` until then):
 
 ```json
 {
@@ -58,12 +59,15 @@ Plan format (statuses: `pending` / `running` / `done`; `executor`: `main` / `age
   "deferred_hub_edits": ["app/src/main/res/values/strings.xml"],
   "contracts": [
     {
+      "id": "auth-repo",
       "between": ["data-layer", "login-ui"],
       "definition": "interface signatures, verbatim Kotlin"
     }
   ]
 }
 ```
+
+When prompts are assembled mechanically (the default — see Step 3), the plan also carries a top-level `prompt_template` (`intro`, `tail` — the shared halves of the agent prompt) and, per agent thread, `task`, `contract_ids` (referencing `contracts[].id`), and `verify` instead of a hand-written `prompt`.
 
 5. Validate the partition: `python3 .claude/skills/parallel-dev/scripts/check_partition.py check <plan>` — fix overlaps and re-run until clean.
 
@@ -83,7 +87,8 @@ Invoking the skill is not an obligation to parallelize. Check in order:
 
 - By default the main model takes the thread with the **largest amount of work**: it has the full context of the conversation and the project, and the biggest (usually the riskiest) piece should live where the context is richest.
 - The remaining threads go to agents, but no more than (N−1) agents run at once. If there are more independent threads than that, queue the extras: as soon as one agent finishes, launch the next one from the queue.
-- Build each agent's prompt from `references/agent-prompt-template.md`, filling every placeholder (task context, worktree path, allowed files, contracts, verification commands), and store the finished prompts in the plan file (`threads[].prompt`). The template carries the non-negotiables — `using-agent-skills` bootstrap, the worktree confinement, the file boundary, the subagent ban that overrides any skill's fan-out suggestions, and the FILES CHANGED / SUMMARY / DEVIATIONS response format — do not strip them when filling it in.
+- Build each agent's prompt from `references/agent-prompt-template.md`. The mechanical way: put the template's shared halves once into the plan's `prompt_template` (`intro`, `tail`), give each thread only `task`, `files`, `contract_ids`, `verify` — and run `plan_tool.py build <plan>`; it splices in the file-boundary and contracts blocks itself. Two things the shared halves cannot carry, so they go into each thread's own fields: the worktree path (start `task` with the thread's `Your worktree is at <scratchpad>/wt-<thread-id>` line — the path is deterministic, so it is known before the worktree exists) and the Verification section (put it in `verify`, heading included, keeping the template's rule that finishing with a failing build or failing tests is not allowed). The template carries the non-negotiables — `using-agent-skills` bootstrap, the worktree confinement, the file boundary, the subagent ban that overrides any skill's fan-out suggestions, and the FILES CHANGED / SUMMARY / DEVIATIONS response format — do not strip them when filling it in.
+- Launch each agent with a short bootstrap prompt pointing at the plan (`You are thread "<id>" of a parallel development run. Read <plan path>, find threads[] entry with id "<id>", and execute its "prompt" field as your complete and only instructions. Do not act on any other thread's prompt.`) rather than pasting the full prompt into the Agent call — the plan file is the single source of truth, and since `build` writes the finished prompts straight to disk, they never have to pass through the orchestrator's context at all.
 - Launch every agent on **Opus**: pass `model: "opus"` in each Agent tool call.
 
 ## Step 4. Checkpoint: present the final plan
@@ -107,11 +112,11 @@ Immediately before the launch:
    git worktree add <scratchpad>/wt-<thread-id> -b pd/<thread-id>
    ```
 
-   Record the resulting path and branch into the plan file (`threads[].worktree`, `threads[].branch`). The main model does not get a worktree — it works in the main tree.
+   The path and branch are recorded into the plan at launch time (see the `launch` command below). The main model does not get a worktree — it works in the main tree.
 
-Launch all agents of a wave in a single message (parallel tool calls), each with `model: "opus"` and its prepared prompt from the plan file. Each agent works only inside its own worktree — the prompt states the worktree path as the repository root, and the file boundary keeps the eventual branch merges conflict-free. A fresh worktree also gives exact attribution: every change in it is that agent's work, no baseline bookkeeping needed.
+Launch all agents of a wave in a single message (parallel tool calls), each with `model: "opus"` and its bootstrap prompt. Each agent works only inside its own worktree — the prompt states the worktree path as the repository root, and the file boundary keeps the eventual branch merges conflict-free. A fresh worktree also gives exact attribution: every change in it is that agent's work, no baseline bookkeeping needed.
 
-While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own. When an agent finishes: record its status, summary, and reported `FILES CHANGED` into the plan file (`status`, `summary`, `actual_files`); then, if the queue is not empty, create the next thread's worktree and launch its agent.
+While the agents work, the main model executes its own thread. Do not poll the agents in a waiting loop — the completion notification arrives on its own. Right after each launch, record it: `plan_tool.py launch <plan> <thread-id> <agent-id> --worktree <path> --branch pd/<thread-id>`. When an agent finishes, pipe its final report into `plan_tool.py done <plan> <thread-id>` (stdin or `--report <file>`) — it parses FILES CHANGED / SUMMARY / DEVIATIONS into the plan itself; if the agent was cancelled or returned unusable work, record it with `plan_tool.py fail <plan> <thread-id> --note <why>` (its worktree can be reset and the thread relaunched). Then, if the queue is not empty, create the next thread's worktree and launch its agent. `plan_tool.py status <plan>` shows the run at a glance and exits non-zero while anything is still pending or running.
 
 ### Resource cost of parallel builds
 
@@ -119,7 +124,7 @@ Each worktree pays for its own cold build: `build/` directories are per-worktree
 
 ## Step 6. Merge and verification
 
-Once all threads are finished, the main model:
+Once `plan_tool.py status <plan>` shows every thread finished (exit code 0), the main model:
 
 1. Commits its own thread in the main tree (a merge over uncommitted changes is fragile even with disjoint file sets — don't rely on it).
 2. Then, for each agent worktree in turn:
