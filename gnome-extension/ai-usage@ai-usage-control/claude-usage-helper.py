@@ -40,7 +40,8 @@ import urllib.parse
 import urllib.request
 
 CREDS_PATH = os.path.expanduser("~/.claude/.credentials.json")
-CACHE_DIR = os.path.expanduser("~/.cache/claude-usage-control")
+# shared with the codex helper and the indicator, hence the neutral name
+CACHE_DIR = os.path.expanduser("~/.cache/ai-usage-control")
 LOCK_PATH = os.path.join(CACHE_DIR, "creds.lock")
 CLI_META_PATH = os.path.join(CACHE_DIR, "cli-meta.json")
 BACKUP_PATH = CREDS_PATH + ".bak-claude-usage"

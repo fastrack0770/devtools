@@ -4,7 +4,7 @@ Three independent toolkits:
 
 - **[Bash scripts](#bash-scripts)** — small git/workspace helpers for your terminal.
 - **[Claude Code base config](#claude-code-base-config)** — reusable Claude Code setup for any project.
-- **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code usage indicator in the Ubuntu top panel.
+- **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code and Codex usage indicators in the Ubuntu top panel.
 
 Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
 
@@ -81,15 +81,23 @@ terminal) afterwards.
 
 # GNOME Shell extension
 
-`gnome-extension/claude-usage@claude-usage-control` — a top-panel indicator showing how
-much of your Claude Code usage limits you have consumed: a progress bar for the current
-5-hour session (blue < 75 %, yellow 75–90 %, red 90–100 %), the countdown to the limit
-reset, the used share of the model-scoped weekly quota, and threshold notifications.
+`gnome-extension/ai-usage@ai-usage-control` — top-panel indicators showing how much of
+your coding-agent usage limits you have consumed, one bar per CLI: a progress bar for
+the shortest limit window (blue < 75 %, yellow 75–90 %, red 90–100 %), the countdown to
+the reset, any further windows and quotas in the menu, and threshold notifications.
 
-Requires GNOME Shell 42 (Ubuntu 22.04), `python3` and a logged-in Claude Code CLI. The
-helper reads (and, when the token expires, refreshes) `~/.claude/.credentials.json` —
-see [gnome-extension/README.md](gnome-extension/README.md) for the data source, the
-security notes and debugging commands.
+Supports **Claude Code** and **Codex**. There is no settings UI: a bar appears when that
+CLI is logged in and disappears when it is not, rechecked every minute.
+
+Requires GNOME Shell 42 (Ubuntu 22.04), `python3` and at least one logged-in CLI. The
+Claude helper reads (and, when the token expires, refreshes) `~/.claude/.credentials.json`;
+the Codex helper never touches `~/.codex/auth.json` — it asks `codex app-server` instead,
+falling back to a dimmed, explicitly stale reading from the session journal. See
+[gnome-extension/README.md](gnome-extension/README.md) for the data sources, the security
+notes, the tests and debugging commands.
+
+> Renamed from `claude-usage@claude-usage-control`. The deploy script removes the old
+> install automatically — without that you would see two Claude bars.
 
 ## Deploy
 
