@@ -4,7 +4,7 @@
 #
 # Copies the portable parts of this repo into <project-dir>:
 #   - .claude/skills/           (skills + their nested scripts/, references/, templates/)
-#   - .claude/commands/         (opsx slash commands)
+#   - .claude/commands/         (opsx slash commands, if present in this repo)
 #   - .claude/settings.json     (hook wiring; uses CLAUDE_PROJECT_DIR, so it's portable)
 #   - scripts/hooks/*.py        (skill-routing hooks)
 #   - CLAUDE.md                 (working rules; prepended if the project already has one)
@@ -27,13 +27,17 @@ if [ ! -d "$DEST" ]; then
     exit 1
 fi
 
-mkdir -p "$DEST/.claude/skills" "$DEST/.claude/commands" "$DEST/scripts/hooks"
+mkdir -p "$DEST/.claude/skills" "$DEST/scripts/hooks"
 
 # Skills, including each skill's nested scripts/, references/ and templates/.
 cp -r "$REPO_ROOT/.claude/skills/." "$DEST/.claude/skills/"
 
-# opsx slash commands (openspec init can still regenerate these in the target).
-cp -r "$REPO_ROOT/.claude/commands/." "$DEST/.claude/commands/"
+# opsx slash commands — optional: this repo only carries them when openspec init
+# has been run here. The target can regenerate them with its own openspec init.
+if [ -d "$REPO_ROOT/.claude/commands" ]; then
+    mkdir -p "$DEST/.claude/commands"
+    cp -r "$REPO_ROOT/.claude/commands/." "$DEST/.claude/commands/"
+fi
 
 # Skill-routing hooks.
 cp "$REPO_ROOT/scripts/hooks/"*.py "$DEST/scripts/hooks/"

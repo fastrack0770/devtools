@@ -11,14 +11,19 @@ Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
 ## Install
 
 ```sh
-make                                        # list the targets
-make bash-scripts                           # 1. console utilities
-make claude-config PROJECT=/path/to/project # 2. Claude Code configuration
-make gnome-extension                        # 3. Ubuntu extension
+make                                                # list the components
+make install bash-scripts                           # 1. console utilities
+make install claude-config PROJECT=/path/to/project # 2. Claude Code configuration
+make install gnome-extension                        # 3. Ubuntu extension
 ```
 
-`make install` runs all three at once; it only deploys the Claude Code config when
-`PROJECT` is set (`make install PROJECT=/path/to/project`). Every target is idempotent.
+Components combine: `make install bash-scripts gnome-extension`. Bare `make install`
+takes all three, but skips the Claude Code config unless `PROJECT` is set
+(`make install PROJECT=/path/to/project`). Every component is idempotent.
+
+`make uninstall bash-scripts` and `make uninstall gnome-extension` reverse the first
+and third; the Claude Code config has no uninstaller, since by then its files are part
+of the target project.
 
 ---
 
@@ -77,6 +82,15 @@ Adds `bash/bin` to your `PATH` (via `~/.bashrc` or `~/.zshrc`) so the scripts ar
 callable by name in any terminal. Idempotent. Run `source ~/.bashrc` (or open a new
 terminal) afterwards.
 
+To undo it:
+
+```sh
+deploy/bash-scripts-uninstall.sh
+```
+
+Strips the `PATH` block back out of the same rc file, backing it up to
+`<rc>.devtools.bak` first. The scripts stay in the repo — only the shell hook goes.
+
 ---
 
 # GNOME Shell extension
@@ -107,4 +121,4 @@ deploy/gnome-extension.sh
 
 Copies the extension into `~/.local/share/gnome-shell/extensions/` and enables it.
 **Log out and log back in** afterwards — on Wayland GNOME Shell cannot pick up a new
-extension in place. Remove it with `make uninstall-gnome-extension`.
+extension in place. Remove it with `make uninstall gnome-extension`.

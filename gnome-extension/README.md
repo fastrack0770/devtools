@@ -55,7 +55,7 @@ is just the presence of `~/.claude/.credentials.json` and `~/.codex/auth.json`.
 From the repo root:
 
 ```bash
-make gnome-extension
+make install gnome-extension
 ```
 
 Then **log out and log back in** (Wayland cannot restart GNOME Shell in place);
@@ -64,7 +64,7 @@ the indicators appear on the right side of the panel.
 To uninstall:
 
 ```bash
-make uninstall-gnome-extension
+make uninstall gnome-extension
 ```
 
 ### Upgrading from `claude-usage@claude-usage-control`
