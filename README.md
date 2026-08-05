@@ -53,9 +53,22 @@ templates), `.claude/commands` (the `opsx` slash commands), `.claude/settings.js
 `scripts/hooks/*.py` and `CLAUDE.md` into `<project-dir>`. Executable bits on skill
 scripts are restored after the copy and any `__pycache__`/`*.pyc` is stripped. If the
 project already has a `.claude/settings.json`, it is left untouched — merge the `hooks`
-block manually. If the project already has a `CLAUDE.md`, the base rules are prepended
-to it; otherwise it is copied. Running `openspec init` in the target project will
-regenerate the `opsx` commands if you need a newer version.
+block manually. Running `openspec init` in the target project will regenerate the
+`opsx` commands if you need a newer version.
+
+**Re-run it to pull skill updates into a project** — that is the intended update path,
+so the deploy is idempotent. In `CLAUDE.md` the base rules live in a managed block:
+
+```markdown
+<!-- BEGIN devtools base rules — managed by deploy/claude-config.sh -->
+…working rules…
+<!-- END devtools base rules -->
+```
+
+Re-runs replace that block in place; anything you wrote outside it is left alone. Edits
+*inside* the block are overwritten, so keep project-specific rules below the `END`
+marker. Projects deployed before the markers existed are migrated on the next run —
+the unmarked copies stacked at the top are collapsed into one block.
 
 ---
 
