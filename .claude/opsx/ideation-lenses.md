@@ -1,6 +1,18 @@
-# Ideation Frameworks Reference
+# Ideation Lenses (optional toolkit for opsx:explore)
 
-Use these frameworks selectively. Pick the lens that fits the idea — don't mechanically run every framework. The goal is to unlock thinking, not to follow a checklist.
+Optional tools for explore mode. Offer a lens when the conversation stalls or the
+user asks for structure — never run these mechanically or in sequence. Pick the
+one lens that fits the moment. (Extracted from the retired `idea-refine` skill.)
+
+## Quick lenses for generating variations
+
+- **Inversion:** "What if we did the opposite?"
+- **Constraint removal:** "What if budget/time/tech weren't factors?"
+- **Audience shift:** "What if this were for [different user]?"
+- **Combination:** "What if we merged this with [adjacent idea]?"
+- **Simplification:** "What's the version that's 10x simpler?"
+- **10x version:** "What would this look like at massive scale?"
+- **Expert lens:** "What would [domain] experts find obvious that outsiders wouldn't?"
 
 ## SCAMPER
 
@@ -83,7 +95,7 @@ Imagine the idea has already failed. Work backwards:
 3. For each failure mode: Is this preventable? Is this a signal the idea needs to change?
 4. Which failure modes are you willing to accept? Which ones would kill the project?
 
-**Best for:** Phase 2 evaluation. Stress-testing ideas that feel good but haven't been pressure-tested.
+**Best for:** Stress-testing ideas that feel good but haven't been pressure-tested.
 
 ## Analogous Inspiration
 
@@ -96,4 +108,4 @@ Look at how other domains solved similar problems:
 
 The key is finding *structural* similarities, not surface-level ones. "Uber for X" is surface-level. "A two-sided marketplace that solves a trust problem between strangers" is structural.
 
-**Best for:** Phase 1 expansion. Generating variations that feel genuinely different from the obvious approach.
+**Best for:** Generating variations that feel genuinely different from the obvious approach.

@@ -17,7 +17,7 @@ When a task arrives, identify the development phase and apply the corresponding 
 Task arrives
     │
     ├── Don't know what you want yet? ──────→ interview-me
-    ├── Have a rough concept, need variants? → idea-refine
+    ├── Have a rough concept, need variants? → opsx:explore
     ├── New project/feature/change? ──→ spec-driven-development
     ├── Have a spec, need tasks? ──────→ planning-and-task-breakdown
     ├── Implementing code? ────────────→ incremental-implementation
@@ -131,7 +131,7 @@ These are the subtle errors that look like productivity but create problems:
 
 2. **Skills are workflows, not suggestions.** Follow the steps in order. Don't skip verification steps.
 
-3. **Multiple skills can apply.** A feature implementation might involve `idea-refine` → `spec-driven-development` → `planning-and-task-breakdown` → `incremental-implementation` → `test-driven-development` → `code-review-and-quality` → `code-simplification` → `shipping-and-launch` in sequence.
+3. **Multiple skills can apply.** A feature implementation might involve `opsx:explore` → `spec-driven-development` → `planning-and-task-breakdown` → `incremental-implementation` → `test-driven-development` → `code-review-and-quality` → `code-simplification` → `shipping-and-launch` in sequence.
 
 4. **When in doubt, start with a spec.** If the task is non-trivial and there's no spec, begin with `spec-driven-development`.
 
@@ -141,7 +141,7 @@ For a complete feature, the typical skill sequence is:
 
 ```
 1.  interview-me                → Extract what the user actually wants
-2.  idea-refine                 → Refine vague ideas
+2.  opsx:explore                → Refine vague ideas (optional lenses/rubric in .claude/opsx/)
 3.  spec-driven-development     → Define what we're building
 4.  planning-and-task-breakdown → Break into verifiable chunks
 5.  context-engineering         → Load the right context
@@ -165,7 +165,7 @@ Not every task needs every skill. A bug fix might only need: `debugging-and-erro
 | Phase | Skill | One-Line Summary |
 |-------|-------|-----------------|
 | Define | interview-me | Surface what the user actually wants before any plan, spec, or code exists |
-| Define | idea-refine | Refine ideas through structured divergent and convergent thinking |
+| Define | opsx:explore | Explore and refine ideas; optional lenses and rubric in `.claude/opsx/` |
 | Define | spec-driven-development | Requirements and acceptance criteria before code |
 | Plan | planning-and-task-breakdown | Decompose into small, verifiable tasks |
 | Build | incremental-implementation | Thin vertical slices, test each before expanding |

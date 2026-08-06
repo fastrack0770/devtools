@@ -1,6 +1,10 @@
-# Refinement & Evaluation Criteria
+# Refinement Rubric (optional toolkit for opsx:explore)
 
-Use this rubric during Phase 2 (Evaluate & Converge) to stress-test idea directions. Not every criterion applies to every idea — use judgment about which dimensions matter most for the specific context.
+Optional rubric for explore mode: use it to stress-test a direction when thinking
+starts to crystallize — especially before offering to turn the conversation into
+a change proposal. Not every criterion applies to every idea; use judgment about
+which dimensions matter for the specific context. (Extracted from the retired
+`idea-refine` skill.)
 
 ## Core Evaluation Dimensions
 
@@ -74,7 +78,9 @@ What makes this genuinely different? Not better — *different*.
 
 ## Assumption Audit
 
-For every idea direction, explicitly list assumptions in three categories:
+For every direction, explicitly list assumptions in three categories. The "Must Be
+True" list feeds directly into the proposal's "Key Assumptions to Validate" section
+when the idea graduates to a change (see opsx:propose).
 
 ### Must Be True (Dealbreakers)
 Assumptions that, if wrong, kill the idea entirely. These need validation before building.

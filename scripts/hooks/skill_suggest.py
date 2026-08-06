@@ -57,7 +57,7 @@ RULES = [
      ["observability-and-instrumentation"]),
     (("идея", "обдумать", "brainstorm", "не уверен", "stress-test", "размыт", "набросать"),
      "raw idea/clarification",
-     ["idea-refine", "interview-me"]),
+     ["opsx:explore", "interview-me"]),
     (("спецификац", "spec", "новая фича", "с нуля", "новый проект", "требовани"),
      "new feature/specification",
      ["spec-driven-development"]),

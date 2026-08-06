@@ -8,6 +8,8 @@ Prints a single JSON line to stdout:
    "cli_version": "2.1.218", "config_source": "cache"}
 or
   {"ok": false, "error": "<reason>"}
+On a rate limit the failure line also carries the server's own wait, when it
+sent one: {"ok": false, "error": "usage_http_429", "retry_after": 900}
 
 Every *_percent is the used share of that limit (0-100), not the remainder.
 
@@ -26,6 +28,8 @@ Env: CU_CLAUDE_BIN points at a specific claude binary,
 CU_NO_CLI_DISCOVERY=1 skips the scan and uses the fallback constants.
 """
 
+import datetime
+import email.utils
 import fcntl
 import json
 import mmap
@@ -63,13 +67,41 @@ ALLOWED_DOMAINS = ("anthropic.com", "claude.com", "claude.ai")
 EXPIRY_MARGIN_MS = 120 * 1000  # refresh if the token dies within 2 minutes
 
 
-def fail(reason):
+def fail(reason, retry_after=None):
     out = {"ok": False, "error": reason}
+    if retry_after is not None:
+        out["retry_after"] = retry_after
     if _CONFIG is not None:  # which endpoints were tried, for debugging
         out["cli_version"] = _CONFIG["version"]
         out["config_source"] = _CONFIG["source"]
     print(json.dumps(out))
     sys.exit(0)
+
+
+def parse_retry_after(err):
+    """Seconds the server asked us to wait, or None.
+
+    RFC 9110 allows either delta-seconds or an HTTP-date; both show up in the wild, so both
+    are accepted. Guessing a fixed pause instead means walking straight into the next 429.
+    """
+    try:
+        value = (err.headers.get("Retry-After") or "").strip()
+    except AttributeError:
+        return None
+    if not value:
+        return None
+    if value.isdigit():
+        return int(value)
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:  # an HTTP-date without a zone is UTC by definition
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    delta = (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+    return max(0, int(delta))
 
 
 # --- CLI discovery -------------------------------------------------------
@@ -411,7 +443,7 @@ def main():
             except (urllib.error.HTTPError, OSError):
                 fail("unauthorized")
         else:
-            fail("usage_http_%d" % e.code)
+            fail("usage_http_%d" % e.code, retry_after=parse_retry_after(e))
     except OSError:
         fail("network")
 
