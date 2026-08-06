@@ -4,10 +4,15 @@
 #
 # Copies the portable parts of this repo into <project-dir>:
 #   - .claude/skills/           (skills + their nested scripts/, references/, templates/)
-#   - .claude/commands/         (opsx slash commands)
+#   - .claude/commands/         (opsx slash commands, if present in this repo)
 #   - .claude/settings.json     (hook wiring; uses CLAUDE_PROJECT_DIR, so it's portable)
 #   - scripts/hooks/*.py        (skill-routing hooks)
-#   - CLAUDE.md                 (working rules; prepended if the project already has one)
+#   - CLAUDE.md                 (working rules, in a marker-delimited managed block)
+#
+# Re-running this is the way to pull skill updates into a project, so every step is
+# idempotent: the CLAUDE.md rules live between BEGIN/END markers and get replaced in
+# place rather than prepended again. A block written by an older version of this
+# script (no markers) is migrated on the next run.
 #
 # settings.local.json is intentionally NOT copied (machine/project-specific).
 # __pycache__/*.pyc are stripped from the destination.
@@ -27,13 +32,17 @@ if [ ! -d "$DEST" ]; then
     exit 1
 fi
 
-mkdir -p "$DEST/.claude/skills" "$DEST/.claude/commands" "$DEST/scripts/hooks"
+mkdir -p "$DEST/.claude/skills" "$DEST/scripts/hooks"
 
 # Skills, including each skill's nested scripts/, references/ and templates/.
 cp -r "$REPO_ROOT/.claude/skills/." "$DEST/.claude/skills/"
 
-# opsx slash commands (openspec init can still regenerate these in the target).
-cp -r "$REPO_ROOT/.claude/commands/." "$DEST/.claude/commands/"
+# opsx slash commands — optional: this repo only carries them when openspec init
+# has been run here. The target can regenerate them with its own openspec init.
+if [ -d "$REPO_ROOT/.claude/commands" ]; then
+    mkdir -p "$DEST/.claude/commands"
+    cp -r "$REPO_ROOT/.claude/commands/." "$DEST/.claude/commands/"
+fi
 
 # Skill-routing hooks.
 cp "$REPO_ROOT/scripts/hooks/"*.py "$DEST/scripts/hooks/"
@@ -54,20 +63,64 @@ else
     cp "$REPO_ROOT/.claude/settings.json" "$DEST/.claude/settings.json"
 fi
 
-# CLAUDE.md working rules.
-#   - If the project already has a CLAUDE.md, prepend ours to the beginning of it.
-#   - Otherwise, just copy it.
+# CLAUDE.md working rules, kept in a managed block so re-runs update it in place.
+BEGIN_MARK='<!-- BEGIN devtools base rules — managed by deploy/claude-config.sh -->'
+END_MARK='<!-- END devtools base rules -->'
+
 if [ -f "$REPO_ROOT/CLAUDE.md" ]; then
-    if [ -f "$DEST/CLAUDE.md" ]; then
-        TMP_CLAUDE="$(mktemp)"
-        cat "$REPO_ROOT/CLAUDE.md" > "$TMP_CLAUDE"
-        printf '\n' >> "$TMP_CLAUDE"
-        cat "$DEST/CLAUDE.md" >> "$TMP_CLAUDE"
-        mv "$TMP_CLAUDE" "$DEST/CLAUDE.md"
-        echo "Note: prepended base rules to existing $DEST/CLAUDE.md."
+    DEST_MD="$DEST/CLAUDE.md"
+
+    BLOCK="$(mktemp)"
+    NEW_MD="$(mktemp)"
+    trap 'rm -f "$BLOCK" "$NEW_MD"' EXIT
+    { printf '%s\n' "$BEGIN_MARK"; cat "$REPO_ROOT/CLAUDE.md"; printf '%s\n' "$END_MARK"; } > "$BLOCK"
+
+    if [ ! -f "$DEST_MD" ]; then
+        cp "$BLOCK" "$DEST_MD"
+        echo "Wrote base rules to $DEST_MD"
+
+    elif grep -qF "$BEGIN_MARK" "$DEST_MD" && grep -qF "$END_MARK" "$DEST_MD"; then
+        # Managed block already there — swap its contents, leave the rest alone.
+        awk -v b="$BEGIN_MARK" -v e="$END_MARK" -v block="$BLOCK" '
+            index($0, b) { while ((getline l < block) > 0) print l; close(block); drop = 1; next }
+            drop && index($0, e) { drop = 0; next }
+            drop { next }
+            { print }
+        ' "$DEST_MD" > "$NEW_MD"
+        if cmp -s "$DEST_MD" "$NEW_MD"; then
+            echo "Base rules in $DEST_MD are already up to date."
+        else
+            cat "$NEW_MD" > "$DEST_MD"
+            echo "Updated the base-rules block in $DEST_MD"
+        fi
+
     else
-        cp "$REPO_ROOT/CLAUDE.md" "$DEST/CLAUDE.md"
+        # Pre-marker layout: older runs prepended the rules verbatim, once per run.
+        # Peel off however many copies are stacked at the top, then write the block.
+        cat "$DEST_MD" > "$NEW_MD"
+        REF_BYTES="$(wc -c < "$REPO_ROOT/CLAUDE.md")"
+        STALE=0
+        while [ "$(wc -c < "$NEW_MD")" -ge "$REF_BYTES" ] \
+            && head -c "$REF_BYTES" "$NEW_MD" | cmp -s - "$REPO_ROOT/CLAUDE.md"; do
+            # Drop the copy, then the blank line the old script put after it.
+            tail -c "+$((REF_BYTES + 1))" "$NEW_MD" \
+                | awk 'NR == 1 && $0 == "" { next } { print }' > "$NEW_MD.trim"
+            mv "$NEW_MD.trim" "$NEW_MD"
+            STALE=$((STALE + 1))
+        done
+
+        { cat "$BLOCK"; printf '\n'; cat "$NEW_MD"; } > "$NEW_MD.out"
+        mv "$NEW_MD.out" "$DEST_MD"
+
+        if [ "$STALE" -gt 0 ]; then
+            echo "Note: replaced $STALE unmarked copy/copies of the base rules at the top of $DEST_MD."
+        else
+            echo "Note: prepended the base-rules block to existing $DEST_MD."
+        fi
     fi
+
+    rm -f "$BLOCK" "$NEW_MD"
+    trap - EXIT
 fi
 
 echo "Claude Code base config deployed to $DEST"
