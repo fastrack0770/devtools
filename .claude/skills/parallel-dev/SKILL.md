@@ -1,9 +1,40 @@
 ---
 name: parallel-dev
-description: Parallel development orchestration — splits implementation work into threads with non-overlapping file sets, hands some threads to subagents while the main model takes the largest thread itself. Invoke on /parallel-dev, and also whenever the user asks to "parallelize", "split the work", "use multiple agents", "fan out the work", or when implementing a large change with independent groups of files (several screens, layers, or modules at once). Accepts an optional argument — the number of threads (default 5, four agents + the main model).
+description: Parallel development orchestration — splits implementation work into threads with non-overlapping file sets, hands some threads to subagents while the main model takes the largest thread itself. Invoke on /parallel-dev, and also whenever the user asks to "parallelize", "split the work", "use multiple agents", "fan out the work", or when implementing a large change with independent groups of files (several screens, layers, or modules at once). Also governs plan-free parallel delegation — running read-only delegates (research, reviews, codex second opinions) concurrently uses this skill's agent quota without a partitioning plan; codex MCP consultations count as agents. Accepts an optional argument — the number of threads (default 5, four agents + the main model).
 ---
 
 # Parallel development
+
+## Scope and modes
+
+A delegate is any model working for the main one — an Agent tool subagent or an MCP
+consultation (codex, another model); codex counts as an agent. Mutating delegation
+goes through the Agent tool only — MCP consultations are always launched read-only.
+This skill governs all concurrent delegation, in one of two modes:
+
+- **Plan mode** — file changes are delegated: at least one delegate may create,
+  modify, delete, or move files, or otherwise change repo/git state. The full flow
+  below applies — partitioning plan, validation, worktrees, merge — even for a
+  single mutating agent. Whether a delegate is mutating is decided by what it is
+  *allowed* to do, not by what it is called: a "review" agent permitted to write
+  files is a mutating agent.
+- **Plan-free mode** — no delegate touches files (read-only research, reviews, second
+  opinions; any edits stay with the main model). No plan, no worktrees, no partition
+  check — only the concurrency quota applies. Launch such delegates read-only:
+  prefer enforced forms (`Explore`/`Plan` agent types, codex `sandbox: read-only`);
+  only when a general agent is needed, explicitly forbid writes in its prompt. A
+  read-only delegate that concludes edits are needed stops and reports — promoting
+  it to a mutating thread happens only by adding the thread to the plan,
+  re-validating it, and launching fresh under plan mode.
+
+In both modes the quota is the same: at most N−1 delegates run concurrently (default
+4), codex consultations included; the main model is not a delegate and takes no
+slot. A single sequential read-only consultation does not require this skill at all.
+Mixed runs are plan mode: mutating threads go into the plan and its partition;
+read-only delegates stay out of the plan and its lifecycle commands (`launch`/`done`,
+worktrees, audits) but still occupy quota slots.
+
+The rest of this document describes plan mode.
 
 Rules for dividing implementation work between subagents (Agent tool) and the main model. Each agent thread runs in its **own git worktree** (branch `pd/<thread-id>`), so every thread can build and run tests independently; the main model works in the main working tree. The core invariant stays: **the file sets of the threads must not overlap** — with worktrees it is what guarantees conflict-free merges of the thread branches.
 
