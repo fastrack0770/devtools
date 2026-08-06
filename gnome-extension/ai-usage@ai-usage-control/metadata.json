@@ -1,0 +1,7 @@
+{
+  "uuid": "ai-usage@ai-usage-control",
+  "name": "AI Usage",
+  "description": "Coding-agent usage bars in the top panel, one per logged-in CLI: Claude Code and Codex. Shows the used share of the shortest limit window (blue < 75%, yellow 75-90%, red 90-100%), the remaining windows and quotas in the menu, threshold notifications and limit reset times. Codex data read from a stale session snapshot is dimmed.",
+  "shell-version": ["42"],
+  "version": 3
+}
