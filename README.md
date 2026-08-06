@@ -42,6 +42,11 @@ Contents:
 
 `.claude/settings.local.json` is machine/project-specific (permissions) — not part of the portable base.
 
+The `openspec-*` skills and `.claude/commands/opsx/` **are committed here** (they are tuned
+for this repo's skill set, not stock `openspec init` output) and no longer gitignored.
+Re-running `openspec init` in this repo therefore shows up as modified tracked files —
+diff before keeping it, or the local tuning is silently reverted.
+
 ## Deploy
 
 ```sh

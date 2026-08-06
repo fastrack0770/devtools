@@ -4,7 +4,7 @@
 Usage:
   check_partition.py check    <plan.json> [--repo DIR]
   check_partition.py snapshot <plan.json> [--repo DIR]
-  check_partition.py audit    <plan.json> [--repo DIR]
+  check_partition.py audit    <plan.json> [--repo DIR] [--thread ID]
 
 check    - verify that thread file sets are pairwise disjoint and do not
            collide with deferred_hub_edits; run before launching agents.
@@ -12,8 +12,13 @@ snapshot - record files already changed in the working tree into
            <plan.json>.baseline so the audit can exclude pre-existing edits;
            run right before launching the first wave.
 audit    - after the wave: compare actual git changes (minus the baseline)
-           against the union of planned files, and each thread's reported
-           actual_files against its allowed list.
+           against the planned files, and each thread's reported actual_files
+           against its allowed list. With one worktree per thread, always pass
+           --thread <id> alongside --repo <that thread's worktree>: it narrows
+           the allowed set to that thread, which is what makes a stray edit into
+           a neighbouring thread's file detectable at all. Without --thread the
+           allowed set is the union of every thread (the older shared-working-tree
+           layout) and cross-thread strays are invisible.
 
 Exit code 0 = clean, 1 = violations found, 2 = usage/plan error.
 """
@@ -56,13 +61,16 @@ def changed_files(repo):
         )
     except (OSError, subprocess.CalledProcessError) as e:
         sys.exit(f"error: git status failed in {repo}: {e}")
-    files = set()
+    files, untracked = set(), set()
     for line in res.stdout.splitlines():
-        path = line[3:]
+        code, path = line[:2], line[3:]
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
-        files.add(norm(path.strip().strip('"')))
-    return files
+        p = norm(path.strip().strip('"'))
+        files.add(p)
+        if code == "??":
+            untracked.add(p)
+    return files, untracked
 
 
 def cmd_check(plan, args):
@@ -95,7 +103,7 @@ def cmd_check(plan, args):
 
 def cmd_snapshot(plan, args):
     baseline = args.plan + ".baseline"
-    files = sorted(changed_files(args.repo))
+    files = sorted(changed_files(args.repo)[0])
     with open(baseline, "w", encoding="utf-8") as f:
         f.write("\n".join(files) + ("\n" if files else ""))
     print(f"snapshot: {len(files)} pre-existing changed file(s) -> {baseline}")
@@ -112,18 +120,44 @@ def cmd_audit(plan, args):
         print(f"WARN: no baseline at {baseline_path}; auditing all changes")
 
     by_thread = thread_files(plan)
-    allowed = set().union(*by_thread.values()) if by_thread else set()
-    allowed |= {norm(f) for f in plan.get("deferred_hub_edits", [])}
-    changed = changed_files(args.repo) - baseline
+    hub = {norm(f) for f in plan.get("deferred_hub_edits", [])}
+    threads = plan["threads"]
+    if args.thread:
+        if args.thread not in by_thread:
+            sys.exit(f"error: no thread '{args.thread}' in the plan")
+        # One worktree holds exactly one thread's work, so `allowed` is that thread's file
+        # set — NOT the union of every thread's. With the union, an agent straying into
+        # another thread's files is indistinguishable from legitimate work and the audit,
+        # which is the only mechanical guard on the partition invariant, passes it silently.
+        allowed = by_thread[args.thread] | hub
+        threads = [t for t in threads if t.get("id") == args.thread]
+        scope = f"thread '{args.thread}'"
+    else:
+        allowed = set().union(*by_thread.values()) if by_thread else set()
+        allowed |= hub
+        scope = "all threads (shared working tree)"
+        print("WARN: auditing against the union of every thread's files — a stray edit into "
+              "another thread's file cannot be detected. Pass --thread <id> when auditing a "
+              "single agent's worktree.")
+    # Excuse a seeded path only while it is still UNTRACKED — that is the copy `launch` put
+    # there, and untracked files never take part in the branch merge. A seed path that is
+    # tracked and modified is the agent editing a repo file, and must still count.
+    seeded = {norm(f) for f in plan.get("worktree_seed_files", [])}
+    changed, untracked = changed_files(args.repo)
+    changed = changed - baseline - (seeded & untracked)
+    print(f"audit scope: {scope}, {len(allowed)} allowed path(s)")
 
     # Collect first, print in labeled sections: a FAILED audit must read unambiguously —
     # during a real run the violation lines and the informational tail were mistaken
     # for one another.
     unclaimed = sorted(changed - allowed)
     boundary = []  # (thread-id, [files])
-    for t in plan["threads"]:
+    unverified = []
+    for t in threads:
         tid = t.get("id", "?")
         actual = {norm(f) for f in t.get("actual_files") or []}
+        if not actual and t.get("status") in ("done", "merged"):
+            unverified.append(tid)
         extra = sorted(actual - by_thread.get(tid, set()))
         if extra:
             boundary.append((tid, extra))
@@ -138,9 +172,14 @@ def cmd_audit(plan, args):
         print(f"VIOLATIONS — thread '{tid}' reported outside its boundary ({len(extra)}):")
         for f in extra:
             print(f"  {f}")
+    if unverified:
+        print(f"WARN: no reported actual_files for finished thread(s) {', '.join(unverified)} "
+              "— their boundary was NOT verified; review those diffs by hand.")
     if untouched:
+        label = ("work that turned out unnecessary" if args.thread
+                 else "another thread's files or work that turned out unnecessary")
         print(f"PLANNED, UNCHANGED ({len(untouched)}) — informational, NOT a violation "
-              "(another thread's files or work that turned out unnecessary):")
+              f"({label}):")
         for f in untouched:
             print(f"  {f}")
     total = len(unclaimed) + sum(len(e) for _, e in boundary)
@@ -154,6 +193,8 @@ def main():
     ap.add_argument("command", choices=["check", "snapshot", "audit"])
     ap.add_argument("plan", help="path to parallel-dev-plan.json")
     ap.add_argument("--repo", default=".", help="repository root (default: cwd)")
+    ap.add_argument("--thread", help="audit: restrict the allowed file set to this thread "
+                                     "(use when --repo is that thread's own worktree)")
     args = ap.parse_args()
     plan = load_plan(args.plan)
     sys.exit({"check": cmd_check, "snapshot": cmd_snapshot, "audit": cmd_audit}[args.command](plan, args))
