@@ -24,6 +24,7 @@ const Format = Me.imports.lib.format;
 
 const TICK_SECONDS = 20; // countdown label refresh between polls
 const BACKOFF_SECONDS = 300; // pause polling after the endpoint rate-limits us
+const MAX_BACKOFF_SECONDS = 3600; // ceiling on a server-supplied Retry-After
 const TRACK_WIDTH = 70;
 const TRACK_HEIGHT = 8;
 const THRESHOLDS = [20, 40, 60, 80, 90, 100];
@@ -44,6 +45,9 @@ const ERROR_MESSAGES = {
     parse: 'Unexpected helper output',
     no_codex_cli: 'codex CLI not found',
     no_usage_data: 'No usage data yet — run codex once',
+    /* The most common failure by far, and the only action is to wait — so it must not be
+     * the one users have to look up. */
+    usage_http_429: 'Rate limited — polling paused, numbers may be stale',
 };
 
 function errorMessage(reason) {
@@ -153,7 +157,7 @@ class UsageIndicator extends PanelMenu.Button {
             try {
                 const data = JSON.parse(stdout);
                 if (!data.ok) {
-                    this._showError(data.error);
+                    this._showError(data.error, data.retry_after);
                     return;
                 }
                 const model = this._provider.parse(data);
@@ -220,9 +224,15 @@ class UsageIndicator extends PanelMenu.Button {
         });
     }
 
-    _showError(reason) {
-        if (reason === 'usage_http_429')
-            this._backoffUntil = now() + BACKOFF_SECONDS;
+    _showError(reason, retryAfter = null) {
+        if (reason === 'usage_http_429') {
+            /* Prefer the server's own Retry-After: a fixed 5-minute guess that undershoots it
+             * just earns the next 429. Capped, so one absurd header cannot freeze the panel. */
+            const wait = Number.isFinite(retryAfter) && retryAfter > 0
+                ? Math.min(retryAfter, MAX_BACKOFF_SECONDS)
+                : BACKOFF_SECONDS;
+            this._backoffUntil = now() + wait;
+        }
 
         /* A rate limit or network blip should not blank a working panel:
          * keep the last known numbers and flag them as stale instead. */

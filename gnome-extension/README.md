@@ -23,8 +23,9 @@ Every number is the **used** share of a limit, not the remainder.
   Polling interval: 60 s.
 - **Failure handling**: a rate limit or network blip keeps the last known
   numbers on screen, dimmed and marked stale in the menu, instead of blanking
-  the panel. After an HTTP 429 automatic polling pauses for 5 minutes;
-  *Refresh now* still forces a request.
+  the panel. After an HTTP 429 automatic polling pauses for as long as the
+  server's `Retry-After` header asks (capped at an hour), or 5 minutes when it
+  sends no such header; *Refresh now* still forces a request.
 
 ## No settings, by design
 
