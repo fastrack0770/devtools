@@ -43,7 +43,8 @@
     "allow": [
       "mcp__codex__*",
 
-      "Bash(ping *)"
+      "Bash(ping *)",
+      "Bash(openspec *)"
     ],
 
     "ask": [
