@@ -27,3 +27,11 @@ The only sanctioned path to running agents is the `parallel-dev` skill.
   shortcut.
 - If a task feels large enough to want agents, invoke `parallel-dev` first — that skill
   owns the non-overlapping file partitioning that makes parallel agents safe.
+
+## 3. Read files with the Read tool
+
+Read file contents only with the Read tool — its offset/limit parameters cover
+line ranges. Do not reach for Bash `cat`/`head`/`tail`/`sed -n` just to look at
+a file: a `PreToolUse` hook (`scripts/hooks/prefer_read.py`) blocks pure-read
+commands and points back here. Bash pipelines that actually process data
+(`grep`, `wc`, `diff`, …) are fine.

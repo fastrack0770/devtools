@@ -1,0 +1,459 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "allowManagedPermissionRulesOnly": true,
+
+  "allowManagedMcpServersOnly": true,
+  "allowedMcpServers": [
+    {
+      "serverCommand": [
+        "@CODEX_BIN@",
+        "mcp-server"
+      ]
+    }
+  ],
+
+  "parentSettingsBehavior": "merge",
+  "disableClaudeAiConnectors": true,
+  "disableRemoteControl": true,
+  "disableArtifact": true,
+
+  "disableSkillShellExecution": true,
+
+  "strictKnownMarketplaces": [],
+  "browserExternalPageTools": "disabled",
+  "disableBrowserExternalNavigation": true,
+
+  "channelsEnabled": false,
+  "allowedChannelPlugins": [],
+
+  "autoInstallIdeExtension": false,
+
+  "env": {
+    "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL": "1",
+    "DISABLE_AUTOUPDATER": "1"
+  },
+
+  "permissions": {
+    "defaultMode": "acceptEdits",
+
+    "disableAutoMode": "disable",
+    "disableBypassPermissionsMode": "disable",
+
+    "allow": [
+      "mcp__codex__*",
+
+      "Bash(ping *)"
+    ],
+
+    "ask": [
+      "WebSearch",
+      "WebFetch",
+
+      "Bash(sudo *)",
+
+      "Bash(apt install*)",
+      "Bash(apt * install *)",
+      "Bash(apt-get install*)",
+      "Bash(apt-get * install *)",
+      "Bash(dpkg -i*)",
+      "Bash(dpkg * -i *)",
+      "Bash(snap install*)",
+      "Bash(snap * install *)",
+      "Bash(flatpak install*)",
+      "Bash(flatpak * install *)",
+
+      "Bash(pip install*)",
+      "Bash(pip * install *)",
+      "Bash(pip3 install*)",
+      "Bash(pip3 * install *)",
+      "Bash(python -m pip install*)",
+      "Bash(python * -m pip * install *)",
+      "Bash(python3 -m pip install*)",
+      "Bash(python3 * -m pip * install *)",
+      "Bash(pipx install*)",
+      "Bash(pipx * install *)",
+      "Bash(pipx run*)",
+      "Bash(pipx * run *)",
+
+      "Bash(uv add*)",
+      "Bash(uv * add *)",
+      "Bash(uv sync*)",
+      "Bash(uv * sync *)",
+      "Bash(uv pip install*)",
+      "Bash(uv * pip * install *)",
+      "Bash(uv tool install*)",
+      "Bash(uv * tool * install *)",
+      "Bash(uvx *)",
+
+      "Bash(poetry add*)",
+      "Bash(poetry * add *)",
+      "Bash(poetry install*)",
+      "Bash(poetry * install *)",
+
+      "Bash(npm install*)",
+      "Bash(npm * install *)",
+      "Bash(npm i)",
+      "Bash(npm i *)",
+      "Bash(npm * i *)",
+      "Bash(npm ci*)",
+      "Bash(npm * ci *)",
+      "Bash(npm add*)",
+      "Bash(npm * add *)",
+      "Bash(npm exec*)",
+      "Bash(npm * exec *)",
+      "Bash(npx *)",
+
+      "Bash(pnpm install*)",
+      "Bash(pnpm * install *)",
+      "Bash(pnpm add*)",
+      "Bash(pnpm * add *)",
+      "Bash(pnpm dlx*)",
+      "Bash(pnpm * dlx *)",
+
+      "Bash(yarn)",
+      "Bash(yarn install*)",
+      "Bash(yarn * install *)",
+      "Bash(yarn add*)",
+      "Bash(yarn * add *)",
+      "Bash(yarn dlx*)",
+      "Bash(yarn * dlx *)",
+
+      "Bash(bun install*)",
+      "Bash(bun * install *)",
+      "Bash(bun add*)",
+      "Bash(bun * add *)",
+      "Bash(bunx *)",
+
+      "Bash(cargo install*)",
+      "Bash(cargo * install *)",
+      "Bash(go install*)",
+      "Bash(go * install *)",
+      "Bash(gem install*)",
+      "Bash(gem * install *)",
+      "Bash(bundle install*)",
+      "Bash(bundle * install *)",
+      "Bash(composer install*)",
+      "Bash(composer * install *)",
+      "Bash(composer require*)",
+      "Bash(composer * require *)",
+
+      "Bash(make install*)",
+      "Bash(make * install *)",
+      "Bash(cmake --install*)",
+      "Bash(cmake * --install *)",
+
+      "Bash(claude update*)",
+      "Bash(claude * update *)",
+
+      "Bash(git push*)",
+      "Bash(git * push *)",
+      "Bash(gh *)",
+      "Bash(rsync *)"
+    ],
+
+    "deny": [
+      "Bash(docker *)",
+      "Bash(podman *)",
+      "Bash(kubectl *)",
+
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+
+      "Read(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.docker/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/gh/**)",
+
+      "Read(~/.claude.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.codex/auth.json)",
+
+      "Read(~/.netrc)",
+      "Read(~/.npmrc)",
+      "Read(~/.pypirc)",
+      "Read(~/.git-credentials)",
+      "Read(~/.config/pypoetry/auth.toml)",
+      "Read(~/.cargo/credentials.toml)",
+      "Read(~/.gem/credentials)",
+      "Read(~/.terraform.d/credentials.tfrc.json)",
+
+      "Read(//**/.env)",
+      "Read(//**/.env.*)",
+
+      "Read(//ABSOLUTE/PRIVATE/PATH/**)",
+
+      "Edit(~/.ssh/**)",
+      "Edit(~/.gnupg/**)",
+      "Edit(~/.aws/**)",
+      "Edit(~/.azure/**)",
+      "Edit(~/.kube/**)",
+      "Edit(~/.docker/**)",
+      "Edit(~/.config/gcloud/**)",
+      "Edit(~/.config/gh/**)",
+
+      "Edit(~/.claude/**)",
+      "Edit(~/.claude.json)",
+      "Edit(~/.codex/**)",
+
+      "Edit(~/.netrc)",
+      "Edit(~/.npmrc)",
+      "Edit(~/.pypirc)",
+      "Edit(~/.git-credentials)",
+      "Edit(~/.config/pypoetry/auth.toml)",
+      "Edit(~/.cargo/credentials.toml)",
+      "Edit(~/.gem/credentials)",
+      "Edit(~/.terraform.d/credentials.tfrc.json)",
+
+      "Edit(//**/.env)",
+      "Edit(//**/.env.*)",
+
+      "Edit(//ABSOLUTE/PRIVATE/PATH/**)",
+
+      "Edit(//etc/claude-code/**)",
+      "Edit(//etc/codex/**)"
+    ]
+  },
+
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+
+    "excludedCommands": [
+      "ping"
+    ],
+
+    "filesystem": {
+      "disabled": false,
+      "allowManagedReadPathsOnly": true,
+
+      "denyRead": [
+        "~/.ssh",
+        "~/.gnupg",
+        "~/.aws",
+        "~/.azure",
+        "~/.kube",
+        "~/.docker",
+
+        "~/.config/gcloud",
+        "~/.config/gh",
+
+        "~/.claude.json",
+        "~/.claude/.credentials.json",
+        "~/.codex/auth.json",
+
+        "~/.netrc",
+        "~/.npmrc",
+        "~/.pypirc",
+        "~/.git-credentials",
+        "~/.config/pypoetry/auth.toml",
+        "~/.cargo/credentials.toml",
+        "~/.gem/credentials",
+        "~/.terraform.d/credentials.tfrc.json",
+
+        "/ABSOLUTE/PRIVATE/PATH"
+      ],
+
+      "denyWrite": [
+        "~/.ssh",
+        "~/.gnupg",
+        "~/.aws",
+        "~/.azure",
+        "~/.kube",
+        "~/.docker",
+
+        "~/.config/gcloud",
+        "~/.config/gh",
+
+        "~/.claude",
+        "~/.claude.json",
+        "~/.codex",
+
+        "~/.netrc",
+        "~/.npmrc",
+        "~/.pypirc",
+        "~/.git-credentials",
+        "~/.config/pypoetry",
+        "~/.cargo",
+        "~/.gem",
+        "~/.terraform.d",
+
+        "/ABSOLUTE/PRIVATE/PATH",
+
+        "/etc",
+        "/usr/local/bin",
+        "/usr/local/sbin"
+      ]
+    },
+
+    "credentials": {
+      "files": [
+        {
+          "path": "~/.ssh",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.gnupg",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.aws",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.azure",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.kube",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.docker",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gcloud",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gh",
+          "mode": "deny"
+        },
+
+        {
+          "path": "~/.claude.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.claude/.credentials.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.codex/auth.json",
+          "mode": "deny"
+        },
+
+        {
+          "path": "~/.netrc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.npmrc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.pypirc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.git-credentials",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/pypoetry/auth.toml",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.cargo/credentials.toml",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.gem/credentials",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.terraform.d/credentials.tfrc.json",
+          "mode": "deny"
+        },
+
+        {
+          "path": "/ABSOLUTE/PRIVATE/PATH",
+          "mode": "deny"
+        }
+      ],
+
+      "envVars": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "ANTHROPIC_AUTH_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "CLAUDE_CODE_OAUTH_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+          "mode": "deny"
+        },
+
+        {
+          "name": "OPENAI_API_KEY",
+          "mode": "deny"
+        },
+
+        {
+          "name": "GITHUB_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "GH_TOKEN",
+          "mode": "deny"
+        },
+
+        {
+          "name": "NPM_TOKEN",
+          "mode": "deny"
+        },
+
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SESSION_TOKEN",
+          "mode": "deny"
+        },
+
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "mode": "deny"
+        },
+
+        {
+          "name": "SSH_AUTH_SOCK",
+          "mode": "deny"
+        }
+      ]
+    },
+
+    "network": {
+      "allowedDomains": [],
+
+      "deniedDomains": [
+        "169.254.169.254",
+        "metadata.google.internal"
+      ],
+
+      "strictAllowlist": false,
+
+      "allowAllUnixSockets": false,
+      "allowLocalBinding": false
+    }
+  }
+}

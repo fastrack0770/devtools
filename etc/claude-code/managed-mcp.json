@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "codex": {
+      "type": "stdio",
+      "command": "@CODEX_BIN@",
+      "args": [
+        "mcp-server"
+      ]
+    }
+  }
+}

@@ -1,12 +1,13 @@
 # devtools
 
-Three independent toolkits:
+Four independent toolkits:
 
 - **[Bash scripts](#bash-scripts)** — small git/workspace helpers for your terminal.
 - **[Claude Code base config](#claude-code-base-config)** — reusable Claude Code setup for any project.
 - **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code and Codex usage indicators in the Ubuntu top panel.
+- **[Managed policies](#managed-policies)** — system-wide permission files for Claude Code and Codex, deployed into `/etc`.
 
-Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
+Each ships its own deploy script in `deploy/`; the `Makefile` wraps all of them.
 
 ## Install
 
@@ -15,15 +16,18 @@ make                                                # list the components
 make install bash-scripts                           # 1. console utilities
 make install claude-config PROJECT=/path/to/project # 2. Claude Code configuration
 make install gnome-extension                        # 3. Ubuntu extension
+make install managed-policies                       # 4. managed policy files in /etc (sudo)
 ```
 
 Components combine: `make install bash-scripts gnome-extension`. Bare `make install`
-takes all three, but skips the Claude Code config unless `PROJECT` is set
-(`make install PROJECT=/path/to/project`). Every component is idempotent.
+skips the Claude Code config unless `PROJECT` is set
+(`make install PROJECT=/path/to/project`), and always skips `managed-policies` —
+that one is system-wide and needs sudo, so it must be asked for by name.
+Every component is idempotent.
 
-`make uninstall bash-scripts` and `make uninstall gnome-extension` reverse the first
-and third; the Claude Code config has no uninstaller, since by then its files are part
-of the target project.
+`make uninstall bash-scripts`, `make uninstall gnome-extension` and
+`make uninstall managed-policies` reverse their installs; the Claude Code config has
+no uninstaller, since by then its files are part of the target project.
 
 ---
 
@@ -140,3 +144,34 @@ deploy/gnome-extension.sh
 Copies the extension into `~/.local/share/gnome-shell/extensions/` and enables it.
 **Log out and log back in** afterwards — on Wayland GNOME Shell cannot pick up a new
 extension in place. Remove it with `make uninstall gnome-extension`.
+
+---
+
+# Managed policies
+
+`etc/` mirrors the system paths of the managed (admin-level) permission files:
+
+- `etc/claude-code/managed-settings.json` → `/etc/claude-code/managed-settings.json` —
+  locked-down Claude Code policy: sandbox on, credential paths denied, package
+  installs and network-ish commands behind an ask, only the Codex MCP server allowed.
+- `etc/claude-code/managed-mcp.json` → `/etc/claude-code/managed-mcp.json` —
+  the managed MCP server list (Codex over stdio).
+- `etc/codex/requirements.toml` → `/etc/codex/requirements.toml` —
+  the matching Codex policy: workspace-only filesystem profile, network off by
+  default (escalation via approval), installer commands prompt.
+
+## Deploy
+
+```sh
+deploy/managed-policies.sh
+```
+
+Copies the three files into `/etc` via `sudo install` (root-owned, mode 0644).
+The repo copies are templates: the `@CODEX_BIN@` placeholder is replaced at
+install time with the codex binary found via `command -v codex` (the install
+aborts if there is none), so `managed-mcp.json` and `allowedMcpServers` in
+`managed-settings.json` always agree on the real path for this machine.
+Idempotent: up-to-date files are skipped. The files ship with an
+`/ABSOLUTE/PRIVATE/PATH` placeholder — replace it with your real private path (or
+drop those entries) before deploying; the script warns while it is still present.
+Remove the files again with `make uninstall managed-policies`.

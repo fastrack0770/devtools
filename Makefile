@@ -5,10 +5,12 @@
 #   make install bash-scripts                     put bash/bin on your PATH
 #   make install gnome-extension                  install the AI Usage GNOME Shell extension
 #   make install claude-config PROJECT=<dir>      deploy the Claude Code base config into <dir>
+#   make install managed-policies                 copy the Claude/Codex managed policy files into /etc (sudo)
 #   make install bash-scripts gnome-extension     several components at once
 #
 #   make uninstall bash-scripts                   take bash/bin back off your PATH
 #   make uninstall gnome-extension                remove and disable that extension
+#   make uninstall managed-policies               remove the managed policy files from /etc
 
 SHELL := /bin/bash
 DEPLOY := $(CURDIR)/deploy
@@ -20,8 +22,8 @@ EXT_DIR := $(EXT_ROOT)/$(UUID)
 
 PROJECT ?=
 
-COMPONENTS := bash-scripts claude-config gnome-extension
-UNINSTALLABLE := bash-scripts gnome-extension
+COMPONENTS := bash-scripts claude-config gnome-extension managed-policies
+UNINSTALLABLE := bash-scripts gnome-extension managed-policies
 
 ## `make install <component>…` / `make uninstall <component>…`
 ##
@@ -52,10 +54,11 @@ $(foreach c,$(COMPONENTS),$(eval $(c): do-$(c)))
 endif
 
 # Bare `make install` means everything — but only deploy the Claude config when
-# PROJECT was given, since it has nowhere to go otherwise.
+# PROJECT was given, since it has nowhere to go otherwise. managed-policies is
+# system-wide and needs sudo, so both bare verbs skip it: ask for it by name.
 ifeq ($(SELECTED),)
 INSTALL_TARGETS := do-bash-scripts do-gnome-extension $(if $(PROJECT),do-claude-config)
-UNINSTALL_TARGETS := $(addprefix undo-,$(UNINSTALLABLE))
+UNINSTALL_TARGETS := $(addprefix undo-,$(filter-out managed-policies,$(UNINSTALLABLE)))
 else
 INSTALL_TARGETS := $(addprefix do-,$(SELECTED))
 UNINSTALL_TARGETS := $(addprefix undo-,$(SELECTED))
@@ -72,12 +75,15 @@ help:
 	@echo "  make install bash-scripts                   add bash/bin to PATH in your shell rc"
 	@echo "  make install gnome-extension                install the AI Usage GNOME Shell extension"
 	@echo "  make install claude-config PROJECT=<dir>    deploy the Claude Code base config into <dir>"
+	@echo "  make install managed-policies               copy the Claude/Codex managed policy files into /etc (sudo)"
 	@echo
 	@echo "  Components combine: make install bash-scripts gnome-extension"
-	@echo "  Bare 'make install' skips claude-config unless PROJECT is set."
+	@echo "  Bare 'make install' skips claude-config unless PROJECT is set,"
+	@echo "  and always skips managed-policies (system-wide, needs sudo)."
 	@echo
 	@echo "  make uninstall bash-scripts                 take bash/bin back off your PATH"
 	@echo "  make uninstall gnome-extension              remove and disable that extension"
+	@echo "  make uninstall managed-policies             remove the managed policy files from /etc"
 
 install: $(INSTALL_TARGETS)
 ifeq ($(SELECTED),)
@@ -110,8 +116,17 @@ do-claude-config:
 do-gnome-extension:
 	$(DEPLOY)/gnome-extension.sh
 
+## 4. Managed policies — Claude Code + Codex system-wide permission files in /etc.
+do-managed-policies:
+	$(DEPLOY)/managed-policies.sh
+
 undo-bash-scripts:
 	$(DEPLOY)/bash-scripts-uninstall.sh
+
+undo-managed-policies:
+	sudo rm -f /etc/claude-code/managed-settings.json /etc/claude-code/managed-mcp.json /etc/codex/requirements.toml
+	-sudo rmdir /etc/claude-code /etc/codex 2>/dev/null
+	@echo "Removed the managed policy files from /etc."
 
 undo-gnome-extension:
 	-gnome-extensions disable $(UUID) 2>/dev/null

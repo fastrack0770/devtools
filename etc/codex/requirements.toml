@@ -1,0 +1,338 @@
+allowed_approval_policies = ["on-request"]
+allowed_approvals_reviewers = ["user"]
+
+# Никакого встроенного web-search без approval.
+allowed_web_search_modes = []
+
+# Только наш безопасный permission profile.
+default_permissions = "claude_mcp_safe"
+
+allow_login_shell = false
+allow_managed_hooks_only = true
+allow_remote_control = false
+allow_appshots = false
+
+check_for_update_on_startup = false
+
+
+[allowed_permission_profiles]
+claude_mcp_safe = true
+
+
+[permissions.claude_mcp_safe]
+description = "Workspace access with network escalation requiring explicit user approval"
+extends = ":workspace"
+
+
+[permissions.claude_mcp_safe.filesystem]
+
+"~/.ssh" = "deny"
+"~/.gnupg" = "deny"
+"~/.aws" = "deny"
+"~/.azure" = "deny"
+"~/.kube" = "deny"
+"~/.docker" = "deny"
+
+"~/.config/gcloud" = "deny"
+"~/.config/gh" = "deny"
+
+"~/.codex/auth.json" = "deny"
+
+# Зеркально к Claude-политике: Codex не должен видеть креды Claude.
+"~/.claude.json" = "deny"
+"~/.claude/.credentials.json" = "deny"
+
+"~/.netrc" = "deny"
+"~/.npmrc" = "deny"
+"~/.pypirc" = "deny"
+"~/.git-credentials" = "deny"
+
+"~/.config/pypoetry/auth.toml" = "deny"
+"~/.cargo/credentials.toml" = "deny"
+"~/.gem/credentials" = "deny"
+"~/.terraform.d/credentials.tfrc.json" = "deny"
+
+"/ABSOLUTE/PRIVATE/PATH" = "deny"
+
+
+[permissions.claude_mcp_safe.filesystem.":workspace_roots"]
+
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+
+# Codex validates read paths strictly: no glob components except a trailing
+# /** subtree ("**/.git/HEAD" = "read" aborts startup). Paths here are
+# relative to each workspace root, so this keeps the top-level git metadata
+# readable but not writable. Nested .git dirs (submodules) are not covered.
+".git/**" = "read"
+
+[permissions.claude_mcp_safe.network]
+
+# Локальные команды Codex не получают сеть автоматически.
+# При approval_policy=on-request Codex должен запросить повышение
+# разрешений для операции, которой нужна сеть.
+enabled = false
+
+allow_local_binding = false
+dangerously_allow_all_unix_sockets = false
+
+
+# Дополнительный системный deny-read.
+# Его нельзя ослабить ~/.codex/config.toml или аргументом MCP.
+[permissions.filesystem]
+
+deny_read = [
+  "/**/.env",
+  "/**/.env.*",
+
+  "~/.ssh",
+  "~/.gnupg",
+  "~/.aws",
+  "~/.azure",
+  "~/.kube",
+  "~/.docker",
+
+  "~/.config/gcloud",
+  "~/.config/gh",
+
+  "~/.codex/auth.json",
+
+  "~/.claude.json",
+  "~/.claude/.credentials.json",
+
+  "~/.netrc",
+  "~/.npmrc",
+  "~/.pypirc",
+  "~/.git-credentials",
+
+  "~/.config/pypoetry/auth.toml",
+  "~/.cargo/credentials.toml",
+  "~/.gem/credentials",
+  "~/.terraform.d/credentials.tfrc.json",
+
+  "/ABSOLUTE/PRIVATE/PATH"
+]
+
+
+# Не позволяем Codex получить ещё один внешний канал
+# через apps/plugins/browser.
+[features]
+
+apps = false
+plugins = false
+remote_plugin = false
+
+browser_use = false
+browser_use_external = false
+browser_use_full_cdp_access = false
+
+in_app_browser = false
+in_app_updates = false
+
+computer_use = false
+workspace_dependencies = false
+
+
+# Codex не должен подключать собственные MCP servers.
+# Это не мешает самому `codex mcp-server` работать сервером для Claude.
+[mcp_servers]
+
+
+# Наиболее распространённые способы установки ПО требуют approval.
+[rules]
+
+prefix_rules = [
+  {
+    pattern = [
+      { token = "sudo" }
+    ],
+    decision = "prompt",
+    justification = "Privilege escalation requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "apt" },
+      { any_of = ["install", "remove", "purge"] }
+    ],
+    decision = "prompt",
+    justification = "Package-management changes require explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "apt-get" },
+      { any_of = ["install", "remove", "purge"] }
+    ],
+    decision = "prompt",
+    justification = "Package-management changes require explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "dpkg" }
+    ],
+    decision = "prompt",
+    justification = "Package-management changes require explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "snap" },
+      { any_of = ["install", "remove", "refresh"] }
+    ],
+    decision = "prompt",
+    justification = "Package-management changes require explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "flatpak" },
+      { any_of = ["install", "uninstall", "update"] }
+    ],
+    decision = "prompt",
+    justification = "Package-management changes require explicit user approval."
+  },
+
+  {
+    pattern = [
+      { any_of = ["pip", "pip3"] },
+      { token = "install" }
+    ],
+    decision = "prompt",
+    justification = "Installing Python packages requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "pipx" },
+      { any_of = ["install", "run"] }
+    ],
+    decision = "prompt",
+    justification = "Installing or fetching Python tools requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "poetry" },
+      { any_of = ["add", "install"] }
+    ],
+    decision = "prompt",
+    justification = "Dependency installation requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "npm" },
+      { any_of = ["install", "i", "ci", "add", "exec"] }
+    ],
+    decision = "prompt",
+    justification = "Node dependency installation or execution requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "npx" }
+    ],
+    decision = "prompt",
+    justification = "npx may download and execute packages."
+  },
+
+  {
+    pattern = [
+      { token = "pnpm" },
+      { any_of = ["install", "add", "dlx"] }
+    ],
+    decision = "prompt",
+    justification = "Node dependency installation or execution requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "yarn" },
+      { any_of = ["install", "add", "dlx"] }
+    ],
+    decision = "prompt",
+    justification = "Node dependency installation or execution requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "bun" },
+      { any_of = ["install", "add"] }
+    ],
+    decision = "prompt",
+    justification = "Dependency installation requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "bunx" }
+    ],
+    decision = "prompt",
+    justification = "bunx may download and execute packages."
+  },
+
+  {
+    pattern = [
+      { token = "cargo" },
+      { token = "install" }
+    ],
+    decision = "prompt",
+    justification = "Installing Rust binaries requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "go" },
+      { token = "install" }
+    ],
+    decision = "prompt",
+    justification = "Installing Go tools requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "gem" },
+      { token = "install" }
+    ],
+    decision = "prompt",
+    justification = "Installing Ruby gems requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "bundle" },
+      { token = "install" }
+    ],
+    decision = "prompt",
+    justification = "Dependency installation requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "composer" },
+      { any_of = ["install", "require"] }
+    ],
+    decision = "prompt",
+    justification = "Dependency installation requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "make" },
+      { token = "install" }
+    ],
+    decision = "prompt",
+    justification = "Installation requires explicit user approval."
+  },
+
+  {
+    pattern = [
+      { token = "cmake" },
+      { token = "--install" }
+    ],
+    decision = "prompt",
+    justification = "Installation requires explicit user approval."
+  }
+]
