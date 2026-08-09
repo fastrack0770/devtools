@@ -16,8 +16,8 @@ start with `using-agent-skills`. Do not ignore the suggestions and improvise.
 
 ## 2. Delegation rules: `parallel-dev` owns the agent quota; a plan is needed only for delegated file changes
 
-A delegate is any model working for the main one: an Agent tool subagent **or an MCP
-consultation (codex, another Claude model) — codex counts as an agent**.
+A delegate is any model working for the main one: an Agent tool subagent **or an
+external CLI/MCP session (codex, another Claude model) — codex counts as an agent**.
 
 **Strong request:** never spawn delegates outside these rules.
 
@@ -27,8 +27,10 @@ consultation (codex, another Claude model) — codex counts as an agent**.
   fan out the work) and its partitioning plan (`parallel-dev-plan.json`) written and
   validated before that delegate launches, even for a single agent. The boundary is
   effects, not labels: a "review" or "advisory" delegate that is allowed to write
-  files is a mutating delegate. Mutating delegation goes through the Agent tool
-  only — MCP consultations are always launched read-only.
+  files is a mutating delegate. A mutating delegate may be carried either by the
+  Agent tool or by codex — codex is a full code-editing executor, not advisory-only.
+  Launch it through `.claude/skills/parallel-dev/scripts/run_codex.sh --write --cwd
+  <thread worktree>`; that mode is allowed only under a validated plan.
 - **Running delegates in parallel** (more than one at once, read-only ones included)
   also requires `parallel-dev`: it owns the concurrency quota — at most N−1
   concurrent delegates (default 4), codex consultations included. If no delegate
@@ -36,7 +38,8 @@ consultation (codex, another Claude model) — codex counts as an agent**.
 - **A single sequential read-only delegate** (a codex second opinion, an `Explore`
   lookup) needs neither the skill nor a plan.
 - Launch plan-free delegates read-only: prefer enforced forms (`Explore`/`Plan`
-  agent types, codex with `sandbox: read-only`); only when a general agent is
-  needed, explicitly forbid writes in its prompt. A read-only delegate that
+  agent types, `run_codex.sh` without `--write` — its default read-only mode is the
+  one for reviews and second opinions); only when a general agent is needed,
+  explicitly forbid writes in its prompt. A read-only delegate that
   concludes edits are needed stops and reports; the main model applies the edits
   itself or delegates them under a validated plan.
