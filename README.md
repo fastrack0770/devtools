@@ -3,7 +3,7 @@
 Three independent toolkits:
 
 - **[Bash scripts](#bash-scripts)** — small git/workspace helpers for your terminal.
-- **[Claude Code base config](#claude-code-base-config)** — reusable Claude Code setup for any project.
+- **[Coding-agent base config](#coding-agent-base-config)** — reusable Claude Code + Codex setup for any project.
 - **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code and Codex usage indicators in the Ubuntu top panel.
 
 Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
@@ -11,69 +11,85 @@ Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
 ## Install
 
 ```sh
-make                                                # list the components
-make install bash-scripts                           # 1. console utilities
-make install claude-config PROJECT=/path/to/project # 2. Claude Code configuration
-make install gnome-extension                        # 3. Ubuntu extension
+make                                            # list the components
+make install bash-scripts                       # 1. console utilities
+make install ai-config PROJECT=/path/to/project # 2. Claude Code + Codex configuration
+make install gnome-extension                    # 3. Ubuntu extension
 ```
 
 Components combine: `make install bash-scripts gnome-extension`. Bare `make install`
-takes all three, but skips the Claude Code config unless `PROJECT` is set
+takes all three, but skips the agent config unless `PROJECT` is set
 (`make install PROJECT=/path/to/project`). Every component is idempotent.
 
 `make uninstall bash-scripts` and `make uninstall gnome-extension` reverse the first
-and third; the Claude Code config has no uninstaller, since by then its files are part
+and third; the agent config has no uninstaller, since by then its files are part
 of the target project.
 
 ---
 
-# Claude Code base config
+# Coding-agent base config
 
-Reusable, project-agnostic Claude Code setup in `.claude/` and `scripts/hooks/`.
-Drop it into any project to get the same skills, slash commands and skill-routing hooks.
+Reusable, project-agnostic agent setup in `.claude/`, `.codex/` and `scripts/hooks/`.
+Drop it into any project to get the same skills, slash commands and skill-routing hooks
+— for Claude Code and for Codex.
+
+> Renamed from `claude-config` once it started carrying the Codex side as well.
+> `make install claude-config PROJECT=…` still works and prints a notice, and a
+> `CLAUDE.md` written by the old script is migrated to the new marker on the next run.
 
 Contents:
 - `.claude/skills/` — methodology skills (TDD, code review, planning, security, openspec, …), including each skill's own `scripts/`, `references/` and templates. Taken from https://github.com/addyosmani/agent-skills
 - `.claude/commands/opsx/` — openspec slash commands (`/opsx:propose|apply|sync|archive|explore`).
+- `.claude/opsx/` — ideation lenses and the refinement rubric that both explore skills point at.
+- `.codex/skills/` — the openspec workflow for Codex (`openspec-propose|apply-change|sync-specs|archive-change|explore`), which loads project skills from `.codex/skills`. Same steps and the same local tuning as the Claude versions, wired to Codex's tools (`update_plan` instead of `TodoWrite`, plain questions instead of `AskUserQuestion`, sync run inline instead of through a subagent) and to its `/opsx-*` prompts.
 - `.claude/settings.json` — wires the two hooks below (uses `CLAUDE_PROJECT_DIR`, so it's portable).
 - `scripts/hooks/skill_suggest.py` — `UserPromptSubmit` hook; suggests relevant skills by keyword (RU/EN).
 - `scripts/hooks/opsx_skill_routing.py` — `PostToolUse` hook; reminds about phase skills when an openspec skill runs.
-- `CLAUDE.md` — base working rules (act on the skill-routing hooks; don't spawn agents outside `parallel-dev`).
+- `CLAUDE.md` — base working rules (act on the skill-routing hooks; don't spawn agents outside `parallel-dev`). The single source of truth for every agent: rule changes are made here.
+- `.codex/AGENTS.md` → deployed as `AGENTS.md` — the file Codex reads. It only points at `CLAUDE.md` (plus one note that the hook machinery does not fire in a Codex session), so the rules never exist in two versions.
 
 `.claude/settings.local.json` is machine/project-specific (permissions) — not part of the portable base.
 
-The `openspec-*` skills and `.claude/commands/opsx/` **are committed here** (they are tuned
-for this repo's skill set, not stock `openspec init` output) and no longer gitignored.
-Re-running `openspec init` in this repo therefore shows up as modified tracked files —
-diff before keeping it, or the local tuning is silently reverted.
+The `openspec-*` skills (both trees) and `.claude/commands/opsx/` **are committed here**
+(they are tuned for this repo's skill set, not stock `openspec init` output) and no longer
+gitignored. Re-running `openspec init` in this repo therefore shows up as modified tracked
+files — diff before keeping it, or the local tuning is silently reverted. The local tuning
+sits in `<!-- BEGIN custom addition -->` blocks so it can be restored after a regeneration.
 
 ## Deploy
 
 ```sh
-deploy/claude-config.sh <project-dir>
+deploy/ai-config.sh <project-dir>
 ```
 
 Copies `.claude/skills` (with each skill's nested `scripts/`, `references/` and
-templates), `.claude/commands` (the `opsx` slash commands), `.claude/settings.json`,
-`scripts/hooks/*.py` and `CLAUDE.md` into `<project-dir>`. Executable bits on skill
-scripts are restored after the copy and any `__pycache__`/`*.pyc` is stripped. If the
-project already has a `.claude/settings.json`, it is left untouched — merge the `hooks`
-block manually. Running `openspec init` in the target project will regenerate the
-`opsx` commands if you need a newer version.
+templates), `.claude/commands` (the `opsx` slash commands), `.claude/opsx`,
+`.codex/skills`, `.claude/settings.json`, `scripts/hooks/*.py`, `CLAUDE.md` and
+`AGENTS.md` into `<project-dir>`. Executable bits on skill scripts are restored after the
+copy and any `__pycache__`/`*.pyc` is stripped. If the project already has a
+`.claude/settings.json`, it is left untouched — merge the `hooks` block manually. Running
+`openspec init` in the target project will regenerate the `opsx` commands if you need a
+newer version.
+
+Codex never sees `CLAUDE.md`, so it gets `AGENTS.md` — a pointer to `CLAUDE.md`, not a
+copy of it. The skill-routing hooks stay Claude-only (Codex has no equivalent wired here);
+`AGENTS.md` says as much, so a Codex session picks its skills itself.
 
 **Re-run it to pull skill updates into a project** — that is the intended update path,
 so the deploy is idempotent. In `CLAUDE.md` the base rules live in a managed block:
 
 ```markdown
-<!-- BEGIN devtools base rules — managed by deploy/claude-config.sh -->
+<!-- BEGIN devtools base rules — managed by deploy/ai-config.sh -->
 …working rules…
 <!-- END devtools base rules -->
 ```
 
-Re-runs replace that block in place; anything you wrote outside it is left alone. Edits
-*inside* the block are overwritten, so keep project-specific rules below the `END`
-marker. Projects deployed before the markers existed are migrated on the next run —
-the unmarked copies stacked at the top are collapsed into one block.
+`AGENTS.md` works the same way, with its own `devtools codex rules` markers. Re-runs
+replace the block in place; anything you wrote outside it is left alone. Edits *inside*
+the block are overwritten, so keep project-specific rules below the `END` marker. Older
+layouts are migrated on the next run — the pre-rename
+`managed by deploy/claude-config.sh` opening line is rewritten, and unmarked copies
+stacked at the top are collapsed into one block.
 
 ---
 
