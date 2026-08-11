@@ -1,6 +1,6 @@
 ---
 name: spec-driven-development
-description: Creates specs before coding. Use when starting a new project, feature, or significant change and no specification exists yet. Use when requirements are unclear, ambiguous, or only exist as a vague idea.
+description: Creates specs before coding. Use when starting a project, feature, or significant change with no specification yet — especially when requirements are ambiguous or exist only as a vague idea. Not for single-line fixes, typos, or changes whose requirements are unambiguous and self-contained.
 ---
 
 # Spec-Driven Development
@@ -64,19 +64,11 @@ Whatever the artifact format, it should cover: **Objective** (what/why/who, succ
 
 Update it when decisions or scope change — spec first, then implement. In OpenSpec terms: update the change artifacts mid-flight, and sync delta specs to main specs (`openspec-sync-specs`) when the change lands.
 
-## Red Flags
-
-- Starting to write code without any written requirements
-- Asking "should I just start building?" before clarifying what "done" means
-- Implementing features not mentioned in any spec or task list
-- Making architectural decisions without documenting them
-- Skipping the spec because "it's obvious what to build"
-
 ## Verification
 
 Before proceeding to implementation, confirm:
 
-- [ ] Assumptions were surfaced and confirmed by the human
+- [ ] Assumptions were surfaced — and confirmed by the human where consequential
 - [ ] Success criteria are specific and testable
 - [ ] The spec exists as OpenSpec change artifacts (not only in conversation)
-- [ ] The human has reviewed and approved the proposal
+- [ ] The human approved the proposal when it involves unresolved consequential choices or they asked to review; otherwise proceed and keep the artifacts available for review
