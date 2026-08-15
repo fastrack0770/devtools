@@ -14,12 +14,28 @@ suggestion as a routing instruction, not noise: when a hook names a skill that f
 the task, invoke it via the Skill tool before doing the work by hand. When in doubt,
 start with `using-agent-skills`. Do not ignore the suggestions and improvise.
 
-## 2. Delegation rules: `parallel-dev` owns the agent quota; a plan is needed only for delegated file changes
+## 2. Delegation rules: `parallel-dev` is the sole authority for the concurrent-delegate quota; a plan is needed only for delegated file changes
 
 A delegate is any model working for the main one: an Agent tool subagent **or an
 external CLI/MCP session (codex, another Claude model) — codex counts as an agent**.
 
 **Strong request:** never spawn delegates outside these rules.
+
+### Authority and precedence
+
+`parallel-dev` is the sole source of truth for the permitted number of concurrent
+delegates. When the skill is loaded, its resolved quota governs — this file states no
+numeric ceiling of its own and must not be read as imposing one. The resolution order
+is defined in that skill's "Quota authority and resolution" section; follow it exactly.
+
+Fallback, and only when the skill cannot be loaded: fail closed — no concurrent
+delegates and no delegated file changes. A single sequential read-only delegate remains
+allowed. This fallback never applies once `parallel-dev` is loaded.
+
+Tool or platform capacity may force delegates to be queued; that does not lower the
+quota the skill resolved, and must not be read as a lower policy limit.
+
+### Delegation gate
 
 - **Delegating file changes** — any delegate that may create, modify, delete, or
   move files, or otherwise change repo/git state — requires `parallel-dev` initiated
@@ -31,10 +47,10 @@ external CLI/MCP session (codex, another Claude model) — codex counts as an ag
   Agent tool or by codex — codex is a full code-editing executor, not advisory-only.
   Launch it through `.claude/skills/parallel-dev/scripts/run_codex.sh --write --cwd
   <thread worktree>`; that mode is allowed only under a validated plan.
-- **Running delegates in parallel** (more than one at once, read-only ones included)
-  also requires `parallel-dev`: it owns the concurrency quota — at most N−1
-  concurrent delegates (default 4), codex consultations included. If no delegate
-  is handed file changes, no plan is needed; only the quota applies.
+- **Running delegates concurrently** — more than one at once, read-only ones and codex
+  consultations included — also requires `parallel-dev`: the skill resolves and owns
+  the concurrency quota. If no delegate is handed file changes, no plan is needed;
+  only the skill-resolved quota applies.
 - **A single sequential read-only delegate** (a codex second opinion, an `Explore`
   lookup) needs neither the skill nor a plan.
 - Launch plan-free delegates read-only: prefer enforced forms (`Explore`/`Plan`
