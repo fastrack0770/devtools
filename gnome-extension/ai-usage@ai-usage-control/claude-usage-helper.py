@@ -10,6 +10,8 @@ or
   {"ok": false, "error": "<reason>"}
 On a rate limit the failure line also carries the server's own wait, when it
 sent one: {"ok": false, "error": "usage_http_429", "retry_after": 900}
+Both endpoints can rate-limit: the usage one reports usage_http_429, the token
+one refresh_http_429.
 
 Every *_percent is the used share of that limit (0-100), not the remainder.
 
@@ -351,7 +353,9 @@ def refresh_token():
                 detail = None
             if detail == "invalid_grant":
                 fail("refresh_token_expired")
-            fail("refresh_http_%d" % e.code)
+            # The token endpoint rate-limits too, and its 429 has to carry the
+            # wait just like the usage one — the indicator backs off on both.
+            fail("refresh_http_%d" % e.code, retry_after=parse_retry_after(e))
         except OSError:
             fail("network")
 

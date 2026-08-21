@@ -17,6 +17,7 @@ const GLib = imports.gi.GLib;
 String.prototype.format = imports.format.format;
 
 const Format = imports.lib.format;
+const Errors = imports.lib.errors;
 const Claude = imports.lib.claude.provider;
 const Codex = imports.lib.codex.provider;
 
@@ -201,6 +202,28 @@ print('Claude provider');
     check('and no suffix', model.suffix, null);
 }
 check('missing percent is rejected', Claude.parse({ ok: true }), null);
+
+print('errors');
+/* Both endpoints rate-limit; matching only the usage code left a token-endpoint
+ * 429 with no message and no backoff. */
+check('usage 429 is a rate limit', Errors.isRateLimit('usage_http_429'), true);
+check('refresh 429 is a rate limit too', Errors.isRateLimit('refresh_http_429'), true);
+check('a 500 is not', Errors.isRateLimit('usage_http_500'), false);
+check('nor is a non-code', Errors.isRateLimit(undefined), false);
+
+/* The raw code must never be what the panel shows for a rate limit. */
+checkMatch('usage 429 reads as a rate limit', Errors.errorMessage('usage_http_429'), 'Rate limited');
+checkMatch('refresh 429 too', Errors.errorMessage('refresh_http_429'), 'Rate limited');
+check('no leaked code in the 429 message',
+    Errors.errorMessage('usage_http_429').indexOf('429'), -1);
+check('known code maps to its message', Errors.errorMessage('network'),
+    'No connection to the usage endpoint');
+check('unknown code falls back to itself', Errors.errorMessage('weird'), 'weird');
+
+check('Retry-After wins', Errors.backoffSeconds(900), 900);
+check('no header falls back', Errors.backoffSeconds(null), Errors.DEFAULT_BACKOFF_SECONDS);
+check('zero falls back', Errors.backoffSeconds(0), Errors.DEFAULT_BACKOFF_SECONDS);
+check('an absurd header is capped', Errors.backoffSeconds(999999), Errors.MAX_BACKOFF_SECONDS);
 
 print('');
 print('%d checks, %d failures'.format(checks, failures));

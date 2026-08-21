@@ -21,38 +21,15 @@ const MessageTray = imports.ui.messageTray;
 const ExtensionUtils = imports.misc.extensionUtils;
 const Me = ExtensionUtils.getCurrentExtension();
 const Format = Me.imports.lib.format;
+const Errors = Me.imports.lib.errors;
 
 const TICK_SECONDS = 20; // countdown label refresh between polls
-const BACKOFF_SECONDS = 300; // pause polling after the endpoint rate-limits us
-const MAX_BACKOFF_SECONDS = 3600; // ceiling on a server-supplied Retry-After
 const TRACK_WIDTH = 70;
 const TRACK_HEIGHT = 8;
 const THRESHOLDS = [20, 40, 60, 80, 90, 100];
 const WINDOW_TOLERANCE_SECONDS = 300;
 const STALE_OPACITY = 110;
 const STATE_DIR = GLib.build_filenamev([GLib.get_user_cache_dir(), 'ai-usage-control']);
-
-/* Helper error codes the user can actually act on. Anything absent falls
- * back to the raw code, which is still enough to grep the helpers for. */
-const ERROR_MESSAGES = {
-    no_credentials: 'Not logged in',
-    not_logged_in: 'Not logged in',
-    no_refresh_token: 'Session expired — log in again',
-    refresh_token_expired: 'Session expired — log in again',
-    unauthorized: 'Session expired — log in again',
-    network: 'No connection to the usage endpoint',
-    helper: 'Helper failed to start',
-    parse: 'Unexpected helper output',
-    no_codex_cli: 'codex CLI not found',
-    no_usage_data: 'No usage data yet — run codex once',
-    /* The most common failure by far, and the only action is to wait — so it must not be
-     * the one users have to look up. */
-    usage_http_429: 'Rate limited — polling paused, numbers may be stale',
-};
-
-function errorMessage(reason) {
-    return ERROR_MESSAGES[reason] || reason;
-}
 
 function fillClassFor(percent) {
     if (percent >= 90)
@@ -225,22 +202,27 @@ class UsageIndicator extends PanelMenu.Button {
     }
 
     _showError(reason, retryAfter = null) {
-        if (reason === 'usage_http_429') {
-            /* Prefer the server's own Retry-After: a fixed 5-minute guess that undershoots it
-             * just earns the next 429. Capped, so one absurd header cannot freeze the panel. */
-            const wait = Number.isFinite(retryAfter) && retryAfter > 0
-                ? Math.min(retryAfter, MAX_BACKOFF_SECONDS)
-                : BACKOFF_SECONDS;
-            this._backoffUntil = now() + wait;
+        let retryAt = 0;
+        if (Errors.isRateLimit(reason)) {
+            this._backoffUntil = now() + Errors.backoffSeconds(retryAfter);
+            retryAt = this._backoffUntil;
         }
+        const message = Errors.errorMessage(reason);
 
         /* A rate limit or network blip should not blank a working panel:
          * keep the last known numbers and flag them as stale instead. */
         if (this._model) {
             this._model.stale = true;
             this._render();
-            this._updatedItem.label.text = 'Stale — error at %s (%s)'.format(
-                GLib.DateTime.new_now_local().format('%H:%M:%S'), reason);
+            /* This line is the one a user actually reads, so it gets the message —
+             * it used to interpolate the raw `reason`, which is why a rate limit
+             * still surfaced as `usage_http_429` on every panel that already had
+             * numbers, i.e. almost always. When polling is paused, when it resumes
+             * is the useful half; otherwise, when the reading stopped being live. */
+            this._updatedItem.label.text = retryAt
+                ? 'Stale — %s, retry at %s'.format(message, Format.formatReset(Math.round(retryAt)))
+                : 'Stale — %s (at %s)'.format(
+                    message, GLib.DateTime.new_now_local().format('%H:%M:%S'));
             return;
         }
 
@@ -248,7 +230,7 @@ class UsageIndicator extends PanelMenu.Button {
         this._fill.style_class = 'cu-fill cu-fill-gray';
         this._box.opacity = 255;
         this._infoLabel.text = '—';
-        this._setRows([errorMessage(reason)]);
+        this._setRows([message]);
         this._updatedItem.label.text =
             'Error at %s'.format(GLib.DateTime.new_now_local().format('%H:%M:%S'));
     }
