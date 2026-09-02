@@ -5,53 +5,72 @@ description: Conducts multi-axis code review. Use when a completed change is rea
 
 # Code Review and Quality
 
-Review across five axes before merge: correctness, readability, architecture, security, performance.
+Review across five quality axes plus a separate spec axis before merge. Approve when the change definitely improves overall code health, even if it is not perfect; better is the bar.
 
-**The approval standard:** approve when the change definitely improves overall code health, even if it isn't perfect. Don't block a change for not being how you would have written it. Perfect is not the bar; better is.
+## The five quality axes
 
-## The five axes
+1. **Correctness** — intended behavior, edge cases and error paths; tests prove the right thing; no off-by-ones, races, or inconsistent state.
+2. **Readability & simplicity** — meaningful names, straightforward logic, earned abstractions, no dead artifacts or unsolicited compatibility shims. Load `references/smell-baseline.md` when walking a diff larger than a few hunks.
+3. **Architecture** — existing patterns or justified departures, clean boundaries, one-way dependencies, fitting abstraction levels. Load `references/smell-baseline.md` when walking a diff larger than a few hunks.
+4. **Security** — validated input, absent secrets, checked authorization, injection resistance, external data treated as untrusted. For a deep dive, use the security-and-hardening checklist.
+5. **Performance** — no N+1s, unbounded fetches, missing pagination, or hot-path waste. For a deep dive, use the performance-optimization checklist.
 
-1. **Correctness** — matches the spec; edge cases (null/empty/boundary) and error paths handled; tests exist and actually test the right things; no off-by-ones, races, or state inconsistencies.
-2. **Readability & simplicity** — understandable without the author; names carry meaning; no clever tricks that need decoding; abstractions earn their complexity (don't generalize before the third use case); no dead-code artifacts or backwards-compat shims nobody asked for.
-3. **Architecture** — follows existing patterns or justifies a new one; clean module boundaries; dependencies flow in one direction; abstraction level fits the problem.
-4. **Security** — input validated, secrets absent, auth checked, injections impossible, external data treated as untrusted. Deep dive: the security-and-hardening skill and its checklist at `.claude/skills/security-and-hardening/references/security-checklist.md`.
-5. **Performance** — no N+1s, unbounded fetches, missing pagination, or hot-path waste. Deep dive: `.claude/skills/performance-optimization/references/performance-checklist.md`.
+## Spec axis
+
+Find the originating spec in this order:
+
+1. The active OpenSpec change: `openspec/changes/<name>/proposal.md`, `specs/`, and `tasks.md`.
+2. A path the user passed.
+3. Issue references in `git log` commit messages.
+4. A relevant spec under `docs/`.
+5. If none exists, report **no spec available**.
+
+Report separately: requirements missing or partial; behavior not asked for (scope creep); and requirements that look implemented but are wrong. Quote the spec line for every finding.
+
+The axis stays separate because standards can pass while the spec fails. The spec can also pass while standards fail, and both outcomes must remain visible rather than being merged or reranked.
 
 ## Process
 
-1. **Understand intent first** — what is this change for, per which spec or task?
-2. **Read the tests before the implementation** — they reveal intended behavior and coverage gaps.
-3. **Walk the diff with the five axes.**
-4. **Label every finding with severity** so the author knows what's binding:
+1. **Pin the fixed point.** Use the ref the user names, or the branch's merge-base with `main`. Resolve it with `git rev-parse <ref>`, inspect `git diff <ref>...HEAD` (three-dot), and list commits with `git log <ref>..HEAD --oneline`. Fail early on a bad ref or empty diff.
+2. **Understand intent and locate the spec** using the order above.
+3. **Read tests before implementation** to expose intended behavior and coverage gaps.
+4. **Walk the diff** with the five quality axes.
+5. **Run the spec axis separately.** If two reviewers cover standards and spec, run them sequentially or Call the Skill tool with "parallel-dev" first and stay within its quota.
+6. **Label each quality finding with severity:**
 
 | Prefix | Meaning |
 |--------|---------|
 | *(no prefix)* | Required before merge |
-| **Critical:** | Blocks merge — security, data loss, broken functionality |
-| **Nit:** | Optional — style/format preference |
+| **Critical:** | Blocks merge: security, data loss, broken functionality |
+| **Nit:** | Optional style or formatting preference |
 | **Consider:** | Suggestion worth weighing, not required |
 | **FYI:** | Context only, no action |
 
-5. **Check the verification story** — what was run, did it pass, screenshots for UI, before/after where relevant.
+7. **Check the verification story:** commands and results, screenshots for UI, and before/after evidence where useful.
+
+Done when the fixed point and non-empty diff are verified, both available axes are reported without cross-axis reranking, and the verification evidence is assessed.
 
 ## Change sizing
 
-Small focused changes review better: ~100 lines is ideal, ~300 acceptable for one logical change, ~1000 needs splitting (stack sequential changes, split by layer, or slice the feature vertically). Refactoring and behavior change are two separate changes. Exceptions: mechanical renames, deletions, generated code — review the intent, not every line.
+Small focused changes review better: ~100 lines is ideal, ~300 acceptable for one logical change, ~1000 needs splitting. Refactoring and behavior change are separate changes. For mechanical renames, deletions, or generated code, review intent rather than every line.
 
 ## Review honesty
 
-- No rubber-stamping — "LGTM" without evidence of review helps no one.
-- Don't soften real issues; quantify when possible ("adds ~50ms per list item" beats "could be slow").
-- Push back on approaches with clear problems, propose an alternative, and accept an informed override gracefully. Comment on the code, not the person.
-- Don't accept "I'll clean it up later" — require cleanup pre-merge or an explicitly filed, self-assigned follow-up.
-- Disagreements resolve in order: technical facts → style guide → engineering principles → codebase consistency.
+- Ground approval in evidence; quantify issues when possible.
+- State real issues directly, propose alternatives, accept informed overrides, and comment on code rather than people.
+- Require cleanup before merge or an explicit owned follow-up.
+- Resolve disagreements by technical facts, style guide, engineering principles, then codebase consistency.
 
 ## Adjacent duties
 
-- **Dead code:** after refactors, list newly orphaned code explicitly and ask before deleting — don't leave it, don't silently remove it.
-- **New dependencies:** does the existing stack cover it; size, maintenance, vulnerabilities, license. Prefer stdlib and existing utilities — every dependency is a liability.
-- **Change description:** first line short, imperative, standalone; body says what and why with links to context. "Fix bug" is not a description.
+- **Dead code:** list newly orphaned code and ask before deleting it.
+- **New dependencies:** check whether the stack already covers the need, plus size, maintenance, vulnerabilities, and license.
+- **Change description:** short imperative first line; body explains what and why with context links.
 
 ## Verdict
 
-Approve when all Critical/required findings are resolved, tests and build pass, and the verification story is documented. Otherwise request changes with the severity-labeled list.
+Approve when all Critical and required quality findings are resolved, spec-axis findings are explicitly addressed, tests and build pass, and the verification story is documented. Otherwise request changes with the severity-labeled quality list and the separate spec report.
+
+## Verification
+
+Fixed point resolves and the three-dot diff is non-empty; five quality axes reviewed; spec axis reported separately or says "no spec available"; findings cite evidence; tests, build, and verification story assessed before the verdict.

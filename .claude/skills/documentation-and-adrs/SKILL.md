@@ -9,22 +9,25 @@ Document the *why*, not the *what*. Code shows what was built; the valuable docu
 
 ## Architecture Decision Records
 
-The highest-value documentation you can write. Write one for any decision that would be expensive to reverse: framework/major dependency choice, data model or schema design, auth strategy, API architecture, build/hosting/infrastructure.
+Write an ADR only when all three gates hold: the decision is hard to reverse, surprising without context, and the result of a real trade-off.
 
-Keep them in `docs/decisions/`, numbered sequentially, with this shape:
+Keep ADRs in `docs/adr/`, numbered sequentially. A title plus one to three sentences covering context, decision, and why is a complete ADR:
 
 ```markdown
 # ADR-NNN: <decision as a sentence>
 
-## Status        Proposed | Accepted | Superseded by ADR-XXX | Deprecated
-## Date
-## Context       — the requirements and constraints that forced a choice
-## Decision      — what was chosen, in one or two sentences
-## Alternatives Considered — each with pros, cons, and why rejected
-## Consequences  — what this commits us to, good and bad
+<Context, decision, and why in one to three sentences.>
+
+## Status (optional)
+## Alternatives Considered (optional)
+## Consequences (optional)
 ```
 
-The **Alternatives Considered** section is the point — a decision without rejected alternatives is a description, not a record. Never delete old ADRs; when a decision changes, a new ADR supersedes the old one, preserving the historical context.
+Use optional sections only when they add value. **Alternatives Considered** remains strongly recommended for technology choices. Never delete old ADRs; when a decision changes, a new numbered ADR supersedes the old one and preserves the historical context.
+
+## Project glossary
+
+A project's ubiquitous language lives in root `CONTEXT.md` as a glossary only, without implementation detail. Changing that language belongs to the domain-modeling skill: Call the Skill tool with "domain-modeling" when a term is fuzzy, overloaded, or new.
 
 ## Comments
 
@@ -47,4 +50,4 @@ Public surfaces get documented at the source of truth: doc comments on the typed
 
 ## Verification
 
-Significant decisions have ADRs with alternatives; public APIs are documented at the type level; README quick-start verified to work; no commented-out code or stale TODOs left; rules files reflect current reality.
+Decisions meeting all three gates have numbered ADRs, with alternatives recorded for technology choices; public APIs are documented at the type level; README quick-start verified to work; no commented-out code or stale TODOs left; rules files reflect current reality.
