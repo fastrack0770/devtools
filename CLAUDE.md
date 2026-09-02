@@ -64,7 +64,12 @@ Quota rationale: see `docs/adr/0002-parallel-dev-owns-the-delegate-quota.md`.
 
 ## 3. Editing skills or agent docs
 
-Run `python3 scripts/check_skills.py` after any change under `.claude/skills/`,
-`scripts/hooks/`, or `.claude/skill-manifest.json`. When writing or editing a skill,
-Call the Skill tool with "writing-for-agents". New skills enter the manifest as
-in-progress until they have been used on a real task.
+When writing or editing a skill, Call the Skill tool with "writing-for-agents".
+
+The skill linter and the release manifest live only in the devtools repository, the
+source these rules are deployed from. Where the repository carries
+`scripts/check_skills.py`, run it after any change under `.claude/skills/`,
+`scripts/hooks/`, or `.claude/skill-manifest.json`, and enter new skills in that
+manifest as in-progress until they have been used on a real task. A project without
+that file (a deploy target) has no such gate: check the edited skill's frontmatter
+(`name` equal to its directory, a `description`) and its `references/` paths by hand.
