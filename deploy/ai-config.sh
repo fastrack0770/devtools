@@ -3,11 +3,11 @@
 # Usage: deploy/ai-config.sh <project-dir>
 #
 # Copies the portable parts of this repo into <project-dir>:
-#   - .claude/skills/           (skills + their nested scripts/, references/, templates/)
+#   - .claude/skills/           (promoted skills + nested scripts/references/templates)
 #   - .claude/commands/         (opsx slash commands, if present in this repo)
 #   - .claude/opsx/             (provider-neutral opsx docs the explore skills point at)
 #   - .claude/settings.json     (hook wiring; uses CLAUDE_PROJECT_DIR, so it's portable)
-#   - .codex/skills/            (the same openspec workflow, adapted to Codex)
+#   - .codex/skills/            (adapted openspec workflow + promoted methodology skills)
 #   - scripts/hooks/*.py        (skill-routing hooks)
 #   - CLAUDE.md                 (working rules, in a marker-delimited managed block)
 #   - AGENTS.md                 (the Codex-side rules, same mechanics)
@@ -37,12 +37,45 @@ fi
 
 mkdir -p "$DEST/.claude/skills" "$DEST/.codex/skills" "$DEST/scripts/hooks"
 
-# Skills, including each skill's nested scripts/, references/ and templates/.
-cp -r "$REPO_ROOT/.claude/skills/." "$DEST/.claude/skills/"
+MANIFEST="$REPO_ROOT/.claude/skill-manifest.json"
+mapfile -t PROMOTED_SKILLS < <(python3 -c \
+    'import json,sys; print(*json.load(open(sys.argv[1]))["promoted"], sep="\n")' "$MANIFEST")
+mapfile -t IN_PROGRESS_SKILLS < <(python3 -c \
+    'import json,sys; print(*json.load(open(sys.argv[1]))["in_progress"], sep="\n")' "$MANIFEST")
+
+# Copy only promoted Claude skills, including nested scripts/references/templates.
+for skill in "${PROMOTED_SKILLS[@]}"; do
+    rm -rf "$DEST/.claude/skills/$skill"
+    cp -r "$REPO_ROOT/.claude/skills/$skill" "$DEST/.claude/skills/$skill"
+done
+for skill in "${IN_PROGRESS_SKILLS[@]}"; do
+    rm -rf "$DEST/.claude/skills/$skill"
+done
+echo "Skipped in-progress skills: ${IN_PROGRESS_SKILLS[*]:-(none)}"
 
 # Codex loads project skills from .codex/skills. It gets its own copy of the openspec
 # workflow — same steps, wired to Codex's tools — so the two trees are not interchangeable.
 cp -r "$REPO_ROOT/.codex/skills/." "$DEST/.codex/skills/"
+
+# Give Codex the promoted methodology set too. Keep its existing openspec-* copies:
+# those are adapted to Codex and must not be overwritten by Claude variants. Exclude
+# parallel-dev because it orchestrates Claude-side tooling, and exclude frontmatter
+# disable-model-invocation skills because Codex must not invoke human-only commands.
+for skill in "${PROMOTED_SKILLS[@]}"; do
+    case "$skill" in
+        openspec-*|parallel-dev) continue ;;
+    esac
+    if grep -q '^disable-model-invocation: true$' "$REPO_ROOT/.claude/skills/$skill/SKILL.md"; then
+        rm -rf "$DEST/.codex/skills/$skill"
+        continue
+    fi
+    rm -rf "$DEST/.codex/skills/$skill"
+    cp -r "$REPO_ROOT/.claude/skills/$skill" "$DEST/.codex/skills/$skill"
+done
+rm -rf "$DEST/.codex/skills/parallel-dev"
+for skill in "${IN_PROGRESS_SKILLS[@]}"; do
+    rm -rf "$DEST/.codex/skills/$skill"
+done
 
 # opsx slash commands — optional: this repo only carries them when openspec init
 # has been run here. The target can regenerate them with its own openspec init.
