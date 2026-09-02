@@ -7,9 +7,10 @@
 'use strict';
 
 const { GLib } = imports.gi;
-const ExtensionUtils = imports.misc.extensionUtils;
-const Me = ExtensionUtils.getCurrentExtension();
-const Format = Me.imports.lib.format;
+/* Loaded through the legacy importer under both shell generations: the
+ * entry point puts the extension directory on imports.searchPath before
+ * pulling this file in. See extension.js for why. */
+const Format = imports.aiusagelib.format;
 
 const CREDS_PATH = GLib.build_filenamev([GLib.get_home_dir(), '.claude', '.credentials.json']);
 

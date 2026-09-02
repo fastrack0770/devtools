@@ -10,6 +10,6 @@ if ! command -v gjs >/dev/null 2>&1; then
     exit 1
 fi
 
-# -I EXT_DIR makes imports.lib.* resolve; -I tests/stubs supplies the
-# imports.misc.extensionUtils that only exists inside GNOME Shell.
-exec gjs -I "$EXT_DIR" -I "$EXT_DIR/tests/stubs" "$EXT_DIR/tests/run.js"
+# -I EXT_DIR makes imports.aiusagelib.* resolve, which is the same route both
+# entry points use inside a live shell — so nothing under test needs a stub.
+exec gjs -I "$EXT_DIR" "$EXT_DIR/tests/run.js" "$EXT_DIR"

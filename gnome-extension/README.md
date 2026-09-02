@@ -37,8 +37,10 @@ is just the presence of `~/.claude/.credentials.json` and `~/.codex/auth.json`.
 
 ## Requirements
 
-- GNOME Shell 42 (Ubuntu 22.04). Other versions are untested — bump
-  `shell-version` in `metadata.json` if you want to try.
+- GNOME Shell 42-50, which covers Ubuntu 22.04 through 25.10. GNOME 45
+  replaced the extension entry-point API wholesale, so the package carries one
+  entry point for each side of that break and the installer picks the matching
+  one; everything else is shared. See *Two entry points* below.
 - `python3` (standard library only, no third-party packages).
 - At least one logged-in CLI. With neither, the panel simply stays empty.
 
@@ -162,6 +164,38 @@ Read these before installing — the Claude helper touches your credentials file
   `codex app-server`, under Codex's own credentials handling.
 - Tokens are never printed, logged or copied anywhere else.
 
+## Two entry points
+
+GNOME 45 turned the Shell's JavaScript into ES modules. Before it, the Shell
+read `extension.js` with the legacy importer and called `init()`; from it on it
+does `await import()` and constructs a default-exported class. No single file
+can satisfy both — `export` is a syntax error outside a module — so the package
+ships two:
+
+| File | Shell | Loaded as |
+| --- | --- | --- |
+| `extension.js` | 42-44 | legacy script, `init()` |
+| `extension-esm.js` | 45+ | ES module, `export default class` |
+
+`deploy/gnome-extension.sh` reads `gnome-shell --version` and installs the
+matching one *as* `extension.js`, the name the Shell looks for.
+
+Only the entry points are duplicated. Everything under `aiusagelib/` is one
+copy, written in the legacy style and loaded through `imports` by both — which
+works because an ES module can still reach the `imports` object, while a legacy
+script can never parse an ES module. The directory is not called `lib` because
+`imports.*` is a process-wide namespace shared with every other extension, and
+the first loader of a given path wins for all of them.
+
+Two things the shared code cannot paper over:
+
+- The Shell's own UI modules (`Main`, `PanelMenu`, `PopupMenu`, `MessageTray`)
+  are ES modules on 45+ and unreachable through `imports`, so each entry point
+  obtains them its own way and passes them to `aiusagelib/core.js`.
+- GNOME 46 rebuilt the notification API. `_notify()` picks its calls at runtime
+  by looking for the method that was *removed* (`Source.showNotification`),
+  which is checkable from either side; both branches are covered by the tests.
+
 ## Tests
 
 ```bash
@@ -169,8 +203,13 @@ gnome-extension/ai-usage@ai-usage-control/tests/run.sh
 ```
 
 Covers the formatters and both provider parsers — window selection, staleness,
-expiry and the two JSON dialects — using `gjs` with a stub for the GNOME Shell
-imports. The indicator widget itself needs a live Shell and is not covered.
+expiry and the two JSON dialects — plus the indicator's render path and its
+notifications. `St` ships only inside the Shell process, so `tests/fakeShell.js`
+evaluates `aiusagelib/indicator.js` with the `imports` object shadowed by
+stand-ins. That is also how the notification code is checked against *both*
+shell generations from one machine: the stand-in tray decides which API the
+indicator finds. Anything that needs a real Shell — the panel button actually
+appearing, the subprocess call — is still out of reach.
 
 ## Debugging
 
