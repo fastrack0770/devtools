@@ -13,5 +13,5 @@
     "source-driven-development", "spec-driven-development", "test-driven-development",
     "to-questionnaire", "using-agent-skills", "wizard", "writing-for-agents"
   ],
-  "in_progress": ["retro"]
+  "in_progress": ["branch-review-for-others", "retro"]
 }

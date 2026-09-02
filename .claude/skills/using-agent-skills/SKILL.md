@@ -53,6 +53,7 @@ handoff, retro, and to-questionnaire are typed by the human because they control
 | Situation | Skill |
 |---|---|
 | API or public contract | api-and-interface-design |
+| Someone else's branch, two-pass report for an MR | branch-review-for-others |
 | Real-browser verification | browser-testing-with-devtools |
 | Pipeline or automated gate | ci-cd-and-automation |
 | Completed change review | code-review-and-quality |
