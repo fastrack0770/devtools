@@ -71,7 +71,7 @@ Negation activates the forbidden behavior. State the positive target instead. Ke
 - The body starts with `# Title` and a two-to-four sentence introduction stating the job and defining constraint.
 - Step-shaped skills give every step a `Done when:` completion criterion. Reference-shaped skills use flat rules.
 - End with `## Verification` stating what must be true before completion.
-- Aim for 60-130 lines. The linter `scripts/check_skills.py` warns above 150 and fails above 400.
+- Aim for 60-130 lines. The repo linter (`check_skills.py` in the top-level `scripts/` directory) warns above 150 and fails above 400.
 - Put examples, long lists, and formats in `references/` and state exactly when each reference should be loaded.
 - Operative dependencies use exactly `Call the Skill tool with "X"`.
 - Prefer positive phrasing; reserve prohibitions for hard guardrails and pair them with the positive target.
