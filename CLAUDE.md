@@ -18,6 +18,7 @@ start with `using-agent-skills`. Do not ignore the suggestions and improvise.
 
 A delegate is any model working for the main one: an Agent tool subagent **or an
 external CLI/MCP session (codex, another Claude model) — codex counts as an agent**.
+Rationale: see `docs/adr/0001-codex-is-a-delegate.md`.
 
 **Strong request:** never spawn delegates outside these rules.
 
@@ -34,6 +35,7 @@ allowed. This fallback never applies once `parallel-dev` is loaded.
 
 Tool or platform capacity may force delegates to be queued; that does not lower the
 quota the skill resolved, and must not be read as a lower policy limit.
+Quota rationale: see `docs/adr/0002-parallel-dev-owns-the-delegate-quota.md`.
 
 ### Delegation gate
 
@@ -59,3 +61,10 @@ quota the skill resolved, and must not be read as a lower policy limit.
   explicitly forbid writes in its prompt. A read-only delegate that
   concludes edits are needed stops and reports; the main model applies the edits
   itself or delegates them under a validated plan.
+
+## 3. Editing skills or agent docs
+
+Run `python3 scripts/check_skills.py` after any change under `.claude/skills/`,
+`scripts/hooks/`, or `.claude/skill-manifest.json`. When writing or editing a skill,
+Call the Skill tool with "writing-for-agents". New skills enter the manifest as
+in-progress until they have been used on a real task.

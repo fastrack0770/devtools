@@ -38,15 +38,17 @@ Drop it into any project to get the same skills, slash commands and skill-routin
 > `CLAUDE.md` written by the old script is migrated to the new marker on the next run.
 
 Contents:
-- `.claude/skills/` — methodology skills (TDD, code review, planning, security, openspec, …), including each skill's own `scripts/`, `references/` and templates. Taken from https://github.com/addyosmani/agent-skills
+- `.claude/skill-manifest.json` — the release boundary: promoted skills deploy; the `retro` in-progress bucket stays here for piloting.
+- `.claude/skills/` — methodology skills grouped by the router: main-flow `grilling`; on-ramps `prototype`, `resolving-merge-conflicts`, and `parallel-dev`; codebase-health `codebase-design`; vocabulary `domain-modeling` and `writing-for-agents`; production helper `wizard`; and human-invoked `handoff`, `retro`, and `to-questionnaire`. Each skill keeps its nested `scripts/`, `references/`, and templates. Adapted from both https://github.com/addyosmani/agent-skills and https://github.com/mattpocock/skills.
 - `.claude/commands/opsx/` — openspec slash commands (`/opsx:propose|apply|sync|archive|explore`).
 - `.claude/opsx/` — ideation lenses and the refinement rubric that both explore skills point at.
-- `.codex/skills/` — the openspec workflow for Codex (`openspec-propose|apply-change|sync-specs|archive-change|explore`), which loads project skills from `.codex/skills`. Same steps and the same local tuning as the Claude versions, wired to Codex's tools (`update_plan` instead of `TodoWrite`, plain questions instead of `AskUserQuestion`, sync run inline instead of through a subagent) and to its `/opsx-*` prompts.
+- `.codex/skills/` — the openspec workflow for Codex; at deploy time `deploy/ai-config.sh` adds the promoted model-invoked methodology skills next to it (Codex parity), leaving out `parallel-dev` and the human-invoked skills. The openspec copies keep their Codex-specific tools (`update_plan` instead of `TodoWrite`, plain questions instead of `AskUserQuestion`, sync inline instead of through a subagent).
 - `.claude/settings.json` — wires the two hooks below (uses `CLAUDE_PROJECT_DIR`, so it's portable).
 - `scripts/hooks/skill_suggest.py` — `UserPromptSubmit` hook; suggests relevant skills by keyword (RU/EN).
 - `scripts/hooks/opsx_skill_routing.py` — `PostToolUse` hook; reminds about phase skills when an openspec skill runs.
 - `CLAUDE.md` — base working rules (act on the skill-routing hooks; don't spawn agents outside `parallel-dev`). The single source of truth for every agent: rule changes are made here.
 - `.codex/AGENTS.md` → deployed as `AGENTS.md` — the file Codex reads. It only points at `CLAUDE.md` (plus one note that the hook machinery does not fire in a Codex session), so the rules never exist in two versions.
+- `docs/adr/` — short records for durable configuration and routing decisions.
 
 `.claude/settings.local.json` is machine/project-specific (permissions) — not part of the portable base.
 
@@ -62,9 +64,9 @@ sits in `<!-- BEGIN custom addition -->` blocks so it can be restored after a re
 deploy/ai-config.sh <project-dir>
 ```
 
-Copies `.claude/skills` (with each skill's nested `scripts/`, `references/` and
-templates), `.claude/commands` (the `opsx` slash commands), `.claude/opsx`,
-`.codex/skills`, `.claude/settings.json`, `scripts/hooks/*.py`, `CLAUDE.md` and
+Copies promoted `.claude/skills` (with each skill's nested `scripts/`, `references/`
+and templates), `.claude/commands` (the `opsx` slash commands), `.claude/opsx`,
+the Codex-parity skill set, `.claude/settings.json`, `scripts/hooks/*.py`, `CLAUDE.md` and
 `AGENTS.md` into `<project-dir>`. Executable bits on skill scripts are restored after the
 copy and any `__pycache__`/`*.pyc` is stripped. If the project already has a
 `.claude/settings.json`, it is left untouched — merge the `hooks` block manually. Running
