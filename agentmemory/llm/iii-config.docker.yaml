@@ -1,0 +1,61 @@
+# Конфиг движка iii для контейнера.
+# Отличия от нативного ~/llm/data/iii-config.yaml (его оставила прошлая,
+# не-контейнерная установка; этот стек его не читает):
+#   host: 127.0.0.1 -> 0.0.0.0  — иначе порт слушается только внутри
+#                                 netns контейнера и недоступен с хоста;
+#                                 наружу его всё равно не выпускает
+#                                 публикация вида "127.0.0.1:3111:3111".
+#   file_path: /home/<user>/llm/data/... -> /data/...
+#                                 (~/llm/data примонтирован в /data)
+# Пути здесь контейнерные, поэтому файл машинно-независим и копируется
+# из репозитория как есть — переменных ему не нужно.
+workers:
+  - name: iii-http
+    config:
+      port: 3111
+      host: 0.0.0.0
+      default_timeout: 180000
+      cors:
+        allowed_origins: ["http://localhost:3111", "http://localhost:3113", "http://127.0.0.1:3111", "http://127.0.0.1:3113"]
+        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
+  - name: iii-state
+    config:
+      adapter:
+        name: kv
+        config:
+          store_method: file_based
+          file_path: /data/state_store.db
+  - name: iii-queue
+    config:
+      adapter:
+        name: builtin
+  - name: iii-pubsub
+    config:
+      adapter:
+        name: local
+  - name: iii-cron
+    config:
+      adapter:
+        name: kv
+  - name: iii-stream
+    config:
+      port: 3112
+      host: 0.0.0.0
+      adapter:
+        name: kv
+        config:
+          store_method: file_based
+          file_path: /data/stream_store
+  - name: iii-observability
+    config:
+      enabled: true
+      service_name: agentmemory
+      exporter: memory
+      # sampling_ratio 0.1, а не 1.0: на полной выборке под нагрузкой
+      # log-подписчик отстаёт, движок пишет WARN "Log trigger subscriber
+      # lagged", и этот WARN попадает в тот же поток, который подписчик
+      # не успевает разгребать — положительная обратная связь (#519).
+      sampling_ratio: 0.1
+      metrics_enabled: true
+      logs_enabled: true
+      logs_console_output: false

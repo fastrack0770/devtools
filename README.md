@@ -1,12 +1,13 @@
 # devtools
 
-Three independent toolkits:
+Four independent toolkits:
 
 - **[Bash scripts](#bash-scripts)** — small git/workspace helpers for your terminal.
 - **[Coding-agent base config](#coding-agent-base-config)** — reusable Claude Code + Codex setup for any project.
 - **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code and Codex usage indicators in the Ubuntu top panel.
+- **[Agent memory stack](#agent-memory-stack)** — local persistent memory for Claude Code and Codex, in Docker.
 
-Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
+Each ships its own deploy script in `deploy/`; the `Makefile` wraps all four.
 
 ## Install
 
@@ -15,15 +16,21 @@ make                                            # list the components
 make install bash-scripts                       # 1. console utilities
 make install ai-config PROJECT=/path/to/project # 2. Claude Code + Codex configuration
 make install gnome-extension                    # 3. Ubuntu extension
+make install agentmemory                        # 4. local memory stack
 ```
 
 Components combine: `make install bash-scripts gnome-extension`. Bare `make install`
-takes all three, but skips the agent config unless `PROJECT` is set
+takes the first three, but skips the agent config unless `PROJECT` is set
 (`make install PROJECT=/path/to/project`). Every component is idempotent.
 
 `make uninstall bash-scripts` and `make uninstall gnome-extension` reverse the first
 and third; the agent config has no uninstaller, since by then its files are part
 of the target project.
+
+The memory stack is asked for by name and never comes along with a bare `make install`
+or `make uninstall`: it wants an NVIDIA GPU, downloads gigabytes and rewires both
+agents. It is also the only component with a running state of its own, so it adds two
+verbs — `make start` and `make stop`.
 
 ---
 
@@ -158,3 +165,84 @@ deploy/gnome-extension.sh
 Copies the extension into `~/.local/share/gnome-shell/extensions/` and enables it.
 **Log out and log back in** afterwards — on Wayland GNOME Shell cannot pick up a new
 extension in place. Remove it with `make uninstall gnome-extension`.
+
+---
+
+# Agent memory stack
+
+`agentmemory/` — persistent memory for Claude Code and Codex, served locally. Hooks in
+both agents capture what a session does, a local LLM compresses it, and the next session
+starts with the relevant parts already in context. Nothing leaves the machine.
+
+Three containers, ~8 GB of RAM between them, all on loopback:
+
+| Service | Image | What it does |
+|---|---|---|
+| `llama` | `ghcr.io/ggml-org/llama.cpp:server-cuda` | Qwen3-4B on the GPU, OpenAI-compatible API on `:8080` |
+| `iii-engine` | `iiidev/iii` | the store: REST `:3111`, streams `:3112`, worker socket `:49134` |
+| `agentmemory` | built here from `@agentmemory/agentmemory` | the memory worker, and the viewer on `:3113` |
+
+Requires Docker with the **NVIDIA container runtime** (`nvidia-container-toolkit`),
+Node and npm. Without a GPU the install stops in preflight rather than falling back to
+CPU behind your back.
+
+## Deploy
+
+```sh
+make install agentmemory     # lay it down, build, start, wire both agents
+make start                   # start an existing install and wire the agents
+make stop                    # stop it and unwire them — nothing is deleted
+make uninstall agentmemory   # remove it all, except the memory itself
+```
+
+Every mode repairs only what is missing, which is the normal way to use this: on a
+machine where the stack already runs but, say, the Codex hooks were never installed,
+`make install agentmemory` installs those hooks and leaves everything else alone.
+
+After wiring, **start `codex` (the TUI) once** and choose "Trust all and continue" at the
+"Hooks need review" prompt — Codex will not run hooks it has not been shown, and
+`codex exec` never shows that prompt. Claude Code needs only a restart.
+
+## What goes where
+
+| Path | Owner | On uninstall |
+|---|---|---|
+| `~/llm/docker-compose.yml`, `Dockerfile.agentmemory`, `iii-config.docker.yaml` | this repo (`agentmemory/llm/`) | removed |
+| `~/llm/.env` | generated — machine facts + `agentmemory/versions.env` | removed |
+| `~/llm/data/llama-cache` | downloaded weights, ~2.5 GB | removed (`KEEP_MODEL=1` keeps them) |
+| `~/llm/data/state_store.db`, `stream_store` | **the memory** | **kept** |
+| `~/.agentmemory/.env`, `preferences.json`, `snapshots/`, `backups/` | yours — created only if absent, never rewritten | **kept** |
+| anything else in `~/llm` | not ours | untouched |
+
+So `make uninstall agentmemory` followed by `make install agentmemory` lands back on the
+memory you already had. The reasoning is in
+[docs/adr/0005](docs/adr/0005-agentmemory-file-ownership.md).
+
+Edit a repo-owned file in place and the next install prints the diff and stops, rather
+than migrating a stack that was working; `FORCE=1` replaces it, keeping a backup. Other
+knobs: `WAIT=0` (do not wait for health), `WAIT_TIMEOUT=N` (default 900 — a first run
+downloads a CUDA image and 2.5 GB of weights), `PURGE_IMAGES=1` (uninstall also drops the
+pulled images).
+
+## Versions
+
+`agentmemory/versions.env` is the single source: the npm package version is installed
+both into the container and globally on the host — the host copy is where the hook
+scripts the agents point at actually live, so the two must match — and the model name
+lands in llama's `--alias`, the container's `OPENAI_MODEL` and `~/.agentmemory/.env`
+alike. The engine version is pinned because the memory state on disk is written in its
+format; changing it over accumulated memory is a migration, not an upgrade.
+
+## Wiring
+
+`agentmemory connect` does the installing. Two gaps it leaves are handled by
+`agentmemory/agent-wiring.py`: the `env.AGENTMEMORY_INJECT_CONTEXT` key in
+`~/.claude/settings.json`, which the CLI never writes, and removal, for which it offers
+only the destructive `agentmemory remove`. Both operate on agentmemory's own entries and
+leave every foreign hook, MCP server and env key in those files alone.
+
+One asymmetry worth knowing: the Claude adapter tops its hooks up on every run, while
+the Codex one returns early as soon as its MCP server is wired and never reaches the
+hook installer — so missing Codex hooks can only be installed with `--force`, which also
+rewrites the `[mcp_servers.agentmemory]` block in `config.toml`. The installer backs that
+file up before letting it happen.
