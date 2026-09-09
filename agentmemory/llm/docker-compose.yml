@@ -1,0 +1,243 @@
+# Локальный стек: llama.cpp (Qwen3-4B, CUDA) + agentmemory + движок iii.
+#
+#   docker compose up -d --build     поднять
+#   docker compose stop              остановить (после ребута НЕ поднимется)
+#   docker compose down              снести контейнеры
+#   docker compose logs -f llama     логи
+#
+# Обычно этим файлом управляет установщик, а не руки:
+#   make install agentmemory   развернуть/доустановить    make start   поднять
+#   make uninstall agentmemory снести (память остаётся)   make stop    остановить
+#
+# ── Откуда берутся ${...} ──────────────────────────────────────────────
+# Из ~/llm/.env — его генерирует deploy/agentmemory.sh: HOST_HOME, HOST_UID,
+# HOST_GID (факты этой машины) плюс версии из agentmemory/versions.env.
+# Compose читает .env рядом с compose-файлом сам, без --env-file. Поэтому
+# сам этот файл машинно-независим и копируется из репозитория побайтово:
+# отличие от репозиторной копии = чей-то ручной патч, и установщик о нём
+# скажет, а не затрёт молча.
+#
+# ── Пункт 3 ТЗ: автозапуск после ребута ────────────────────────────────
+# `restart: unless-stopped` — контейнер переживает ребут ровно тогда,
+# когда на момент выключения был запущен; явный `stop`/`down` этот флаг
+# снимает. Держится на docker.service, который уже enabled в systemd.
+#
+# ── Требование по RAM: суммарно не больше 8 ГБ ─────────────────────────
+# mem_limit:  llama 4G + agentmemory 2G + iii-engine 2G = ровно 8G.
+# memswap_limit == mem_limit запрещает контейнеру добирать своп: без
+# этого cgroup позволил бы выйти за лимит по RSS за счёт swap, и
+# «8 ГБ» перестали бы быть 8 ГБ. Превышение лимита = OOM-kill процесса
+# в контейнере, а не деградация всей машины (на хосте всего 14 ГБ).
+#
+# ── ПЕРЕД первым запуском ──────────────────────────────────────────────
+# Нужен nvidia-container-toolkit и остановленный нативный движок (иначе
+# драка за порты 3111/3112/49134: `agentmemory stop`). И то, и другое
+# проверяет preflight установщика — он откажется работать раньше, чем
+# что-либо изменит.
+
+name: llm
+
+services:
+  # ── llama.cpp: OpenAI-совместимый сервер ────────────────────────────
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama
+
+    # Qwen3-4B в кэше НЕ найдена: в ~/.cache/huggingface лежит только
+    # Qwen3-8B-Q4_K_M.gguf, а models--Qwen--Qwen3-4B-GGUF весит 20 КБ —
+    # одни метаданные, без blobs/ и snapshots/. Поэтому --hf-repo:
+    # llama.cpp сама скачает Q4_K_M (~2.5 ГБ) при первом старте в том
+    # ./data/llama-cache, дальше берёт оттуда. Первый up — долгий.
+    #
+    # --alias задаёт имя модели в /v1/models; оно обязано совпадать с
+    # OPENAI_MODEL у agentmemory (см. ниже) и с OPENAI_MODEL в
+    # ~/.agentmemory/.env, который читает хостовой CLI. Поэтому и там, и
+    # там, и здесь — одна переменная LLM_MODEL из versions.env.
+    #
+    # --n-gpu-layers 99 = вся модель в VRAM. Замер на этой карте (8151 MiB):
+    # 4B Q4_K_M при ctx 16384 занимает ~5.0 ГиБ (62%), остаётся ~3 ГиБ на
+    # десктоп. Для сравнения, замер 8B Q4_K_M на том же ctx — 7012 MiB
+    # (86%), свободно 696 MiB: меньше, чем берёт графический стек.
+    # --parallel 1 фиксирует один слот: KV-кэш считается на 16384 токена,
+    # а не на n_parallel*ctx. Явно, чтобы не зависеть от дефолта образа.
+    command: >
+      --hf-repo ${LLM_MODEL}
+      --alias ${LLM_MODEL}
+      --host 0.0.0.0
+      --port 8080
+      --ctx-size 16384
+      --parallel 1
+      --n-gpu-layers 99
+      --jinja
+      --api-key local-llamacpp
+
+    # --api-key: без него llama-server сам предупреждает в логе, что
+    # CORS открыт на '*' и ключа нет. Значение совпадает с
+    # OPENAI_API_KEY из ~/.agentmemory/.env, поэтому .env править не надо.
+    # Это не секрет, а заглушка: пакету нужен непустой ключ, чтобы
+    # включить OpenAI-совместимого провайдера. Оставлен литералом, а не
+    # переменной, именно потому, что его пара живёт в файле, который
+    # установщик никогда не перезаписывает — общая переменная тут
+    # создала бы иллюзию синхронизации, которой нет.
+    # /health от проверки ключа освобождён — healthcheck ниже работает.
+
+    environment:
+      LLAMA_CACHE: /models          # куда --hf-repo кладёт .gguf
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+    volumes:
+      - ./data/llama-cache:/models
+
+    # Только loopback — как и было в ~/.agentmemory/.env.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    # Веса лежат в VRAM, хостовой RAM нужен под mmap файла и KV-скретч.
+    mem_limit: 4g
+    memswap_limit: 4g
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    healthcheck:
+      # /health отдаёт 503 пока модель грузится и 200 когда готова.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Первый старт = скачивание 2.5 ГБ + прогрев; на повторных
+      # стартах healthy наступает за секунды.
+      start_period: 30m
+
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  # ── iii: движок-хранилище, REST/стримы для agentmemory ──────────────
+  iii-engine:
+    # Пин 0.11.2 — последняя версия, работающая с текущей worker-моделью
+    # agentmemory. В 0.11.6 появился sandbox-everything через
+    # `iii worker add`, под который agentmemory ещё не отрефакторен;
+    # рассинхрон вылезает EPIPE-циклами реконнекта и пустым поиском
+    # после сохранения. Поднимать только вместе с версией agentmemory —
+    # обе версии живут в agentmemory/versions.env одним набором.
+    #
+    # Версия движка ещё и определяет формат состояния в ./data. Смена
+    # III_VERSION поверх уже накопленной памяти — не апгрейд контейнера,
+    # а миграция данных; см. docs/adr/0005.
+    image: iiidev/iii:${III_VERSION}
+    container_name: iii-engine
+
+    # Образ distroless и по умолчанию стартует под UID 65532. Здесь
+    # переопределено на хостовой UID:GID, потому что /data — это
+    # bind-mount живого ~/llm/data, принадлежащего пользователю. Вендор
+    # в своём compose вместо этого делает chown named-volume в 65532;
+    # с bind-mount такой chown отобрал бы у вас доступ к собственным
+    # данным, поэтому подстраиваем процесс под каталог, а не наоборот.
+    user: "${HOST_UID}:${HOST_GID}"
+
+    volumes:
+      - ${HOST_HOME}/llm/data:/data
+      - ./iii-config.docker.yaml:/app/config.yaml:ro
+
+    # Образ по умолчанию стартует в /home/nonroot — каталоге, который
+    # принадлежит 65532 и под нашим uid не пишется. Уводим cwd в
+    # /data, чтобы любая запись «рядом с собой» попадала в примонтированный
+    # каталог. (CMD образа уже --config /app/config.yaml, не дублируем.)
+    working_dir: /data
+
+    ports:
+      - "127.0.0.1:3111:3111"     # REST — сюда ходит MCP-шим на хосте
+      - "127.0.0.1:3112:3112"     # стримы
+      - "127.0.0.1:49134:49134"   # ws, к нему коннектится воркер agentmemory
+
+    mem_limit: 2g
+    memswap_limit: 2g
+
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  # ── agentmemory: воркер памяти ──────────────────────────────────────
+  agentmemory:
+    build:
+      context: .
+      dockerfile: Dockerfile.agentmemory
+      args:
+        AGENTMEMORY_VERSION: ${AGENTMEMORY_VERSION}
+        HOST_UID: ${HOST_UID}
+        HOST_GID: ${HOST_GID}
+        HOST_HOME: ${HOST_HOME}
+    image: llm/agentmemory:${AGENTMEMORY_VERSION}
+    container_name: agentmemory
+
+    # --no-engine: движок поднят отдельным сервисом выше, иначе
+    # agentmemory попытается стартовать свой (нативный бинарник iii,
+    # которого в образе нет).
+    command: ["--no-engine", "--verbose"]
+
+    environment:
+      HOME: ${HOST_HOME}
+      # process.env перебивает ~/.agentmemory/.env — в самом пакете
+      # getMergedEnv() собирает {...файл, ...process.env}. Поэтому .env
+      # править не нужно, всё переопределяется отсюда.
+      # В host-сети DNS-имён compose нет — идём в порты, которые
+      # llama и iii-engine публикуют на хостовом loopback.
+      III_ENGINE_URL: ws://127.0.0.1:49134
+      AGENTMEMORY_URL: http://127.0.0.1:3111
+      # Совпадает с --alias у llama. Тот же LLM_MODEL прописан и в
+      # ~/.agentmemory/.env, который читает хостовой CLI (status/doctor):
+      # здесь переопределение существует на случай, если в том файле
+      # осталось старое имя от прошлой установки — контейнеру всё равно.
+      OPENAI_MODEL: ${LLM_MODEL}
+      OPENAI_BASE_URL: http://127.0.0.1:8080/v1
+      # Qwen3 по умолчанию «думает». На 4B это заметно удлиняет
+      # компрессию памяти; флаг дописывает /no_think в промпты.
+      AGENTMEMORY_LLM_NOTHINK: "1"
+      # Держим heap ниже mem_limit: если V8 упрётся в предел раньше
+      # cgroup, получим внятный OOM внутри node вместо SIGKILL от ядра.
+      NODE_OPTIONS: --max-old-space-size=1536
+
+    volumes:
+      # .env, preferences.json, snapshots, pid-файлы. Пути слева и справа
+      # совпадают намеренно: HOME контейнера равен хостовому, см. Dockerfile.
+      - ${HOST_HOME}/.agentmemory:${HOST_HOME}/.agentmemory
+      # Рабочие данные (иначе часть путей в конфигах повиснет).
+      - ${HOST_HOME}/llm/data:${HOST_HOME}/llm/data
+
+    # host-сеть, а не bridge — ради вьюера на 3113. Он биндится на
+    # loopback, и в bridge это был бы loopback САМОГО контейнера:
+    # публикация порта его не достаёт. Снять бинд через
+    # AGENTMEMORY_VIEWER_HOST=0.0.0.0 пакет не даёт без AGENTMEMORY_SECRET
+    # + VIEWER_ALLOWED_HOSTS, а тогда вьюер требует Authorization: Bearer
+    # на каждом запросе — браузером не открыть. С host-сетью loopback
+    # контейнера и есть loopback хоста: http://localhost:3113 работает
+    # так же, как работал у нативной установки.
+    network_mode: host
+
+    working_dir: ${HOST_HOME}/llm
+
+    depends_on:
+      llama:
+        condition: service_healthy
+      iii-engine:
+        condition: service_started
+
+    mem_limit: 2g
+    memswap_limit: 2g
+
+    stdin_open: false
+    tty: false
+
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

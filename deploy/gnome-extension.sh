@@ -6,6 +6,13 @@
 # ~/.local/share/gnome-shell/extensions/ and enables it.
 # Idempotent: running it twice just overwrites the installed copy.
 #
+# GNOME 45 changed how the shell loads an extension's entry point: before it,
+# extension.js was read by the legacy importer and had to define init(); from
+# it on the shell does `await import()` and wants a default-exported class.
+# One file cannot be both, so the package carries both and this script
+# installs the one matching the running shell under the name it expects.
+# Everything else is shared verbatim.
+#
 # The extension used to ship under the UUID claude-usage@claude-usage-control.
 # A UUID is the install identity, so the renamed package installs alongside
 # the old one instead of replacing it — hence the removal step below, without
@@ -58,13 +65,33 @@ if [ -d "$OLD_DEST" ]; then
     echo "Removed the previous install ($OLD_UUID)."
 fi
 
-mkdir -p "$DEST/lib"
-cp -f "$SRC"/metadata.json "$SRC"/extension.js "$SRC"/stylesheet.css "$DEST"/
-cp -f "$SRC"/lib/*.js "$DEST/lib/"
+# --- pick the entry point for this shell -------------------------------
+SHELL_MAJOR="$(gnome-shell --version 2>/dev/null |
+    sed -n 's/^GNOME Shell \([0-9][0-9]*\).*/\1/p')"
+
+if [ -z "$SHELL_MAJOR" ]; then
+    # Better to install something and say so than to refuse: every shell
+    # released since 2023 wants the modern entry point.
+    echo "Warning: could not read the GNOME Shell version; assuming 45 or newer." >&2
+    ENTRY="extension-esm.js"
+elif [ "$SHELL_MAJOR" -ge 45 ]; then
+    ENTRY="extension-esm.js"
+else
+    ENTRY="extension.js"
+fi
+
+# An install from before the split left a lib/ directory that nothing reads
+# any more; drop it so the installed tree matches the package.
+rm -rf "$DEST/lib"
+
+mkdir -p "$DEST/aiusagelib"
+cp -f "$SRC"/metadata.json "$SRC"/stylesheet.css "$DEST"/
+cp -f "$SRC/$ENTRY" "$DEST/extension.js"
+cp -f "$SRC"/aiusagelib/*.js "$DEST/aiusagelib/"
 cp -f "$SRC"/claude-usage-helper.py "$SRC"/codex-usage-helper.py "$DEST"/
 chmod +x "$DEST/claude-usage-helper.py" "$DEST/codex-usage-helper.py"
 
-echo "Installed to $DEST"
+echo "Installed to $DEST (entry point: $ENTRY${SHELL_MAJOR:+, GNOME Shell $SHELL_MAJOR})"
 
 if gnome-extensions enable "$UUID" 2>/dev/null; then
     echo "Extension enabled."

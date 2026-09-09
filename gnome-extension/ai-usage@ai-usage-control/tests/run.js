@@ -1,12 +1,14 @@
 #!/usr/bin/env gjs
-/* Unit tests for the formatters and the two provider parsers.
+/* Unit tests for the formatters, the two provider parsers and the parts of
+ * the indicator that do not need a live shell.
  *
  * Run:  tests/run.sh
  *
- * The indicator itself needs a live GNOME Shell (St, PanelMenu), so it is
- * out of reach here; everything with actual logic — window selection,
- * staleness, expiry, the two JSON dialects — lives in lib/format.js and the
- * providers, and that is what this covers.
+ * St and PanelMenu exist only inside GNOME Shell, so the indicator is
+ * loaded through tests/fakeShell.js, which hands it stand-ins. That is what
+ * lets the notification code be checked against both shell generations from
+ * one machine — the half of the port that no single GNOME version can
+ * exercise on its own.
  */
 'use strict';
 
@@ -16,9 +18,10 @@ const GLib = imports.gi.GLib;
 // does not, so the modules under test would fail without this.
 String.prototype.format = imports.format.format;
 
-const Format = imports.lib.format;
-const Claude = imports.lib.claude.provider;
-const Codex = imports.lib.codex.provider;
+const Format = imports.aiusagelib.format;
+const Errors = imports.aiusagelib.errors;
+const Claude = imports.aiusagelib.claude.provider;
+const Codex = imports.aiusagelib.codex.provider;
 
 let failures = 0;
 let checks = 0;
@@ -201,6 +204,105 @@ print('Claude provider');
     check('and no suffix', model.suffix, null);
 }
 check('missing percent is rejected', Claude.parse({ ok: true }), null);
+
+print('errors');
+/* Both endpoints rate-limit; matching only the usage code left a token-endpoint
+ * 429 with no message and no backoff. */
+check('usage 429 is a rate limit', Errors.isRateLimit('usage_http_429'), true);
+check('refresh 429 is a rate limit too', Errors.isRateLimit('refresh_http_429'), true);
+check('a 500 is not', Errors.isRateLimit('usage_http_500'), false);
+check('nor is a non-code', Errors.isRateLimit(undefined), false);
+
+/* The raw code must never be what the panel shows for a rate limit. */
+checkMatch('usage 429 reads as a rate limit', Errors.errorMessage('usage_http_429'), 'Rate limited');
+checkMatch('refresh 429 too', Errors.errorMessage('refresh_http_429'), 'Rate limited');
+check('no leaked code in the 429 message',
+    Errors.errorMessage('usage_http_429').indexOf('429'), -1);
+check('known code maps to its message', Errors.errorMessage('network'),
+    'No connection to the usage endpoint');
+check('unknown code falls back to itself', Errors.errorMessage('weird'), 'weird');
+
+check('Retry-After wins', Errors.backoffSeconds(900), 900);
+check('no header falls back', Errors.backoffSeconds(null), Errors.DEFAULT_BACKOFF_SECONDS);
+check('zero falls back', Errors.backoffSeconds(0), Errors.DEFAULT_BACKOFF_SECONDS);
+check('an absurd header is capped', Errors.backoffSeconds(999999), Errors.MAX_BACKOFF_SECONDS);
+
+/* --- the indicator, against both shell generations --------------------- */
+
+const EXT_DIR = ARGV[0];
+const FakeShell = imports.tests.fakeShell;
+
+const TEST_PROVIDER = { id: 'test', title: 'Test', helper: 'unused.py' };
+
+const ENV = FakeShell.makeShell();
+const UsageIndicator = FakeShell.loadIndicatorFactory(EXT_DIR, ENV.shell);
+
+/* A fresh indicator with the tray pointed at one shell generation. */
+function newIndicator(generation) {
+    ENV.use(generation);
+    return { indicator: new UsageIndicator(TEST_PROVIDER, '/nonexistent'), log: ENV.log };
+}
+
+const built = newIndicator('modern');
+check('the panel button is titled after its provider',
+    built.indicator.nameText, 'Test Usage');
+
+/* The render path: a known percentage, an unknown one, and the dimming that
+ * separates a live reading from a snapshot. */
+const r = built.indicator;
+r._model = { percent: 42.4, resetsAt: 0, stale: false, suffix: null, rows: ['a', 'b'], note: null };
+r._render();
+check('the bar reports the used share', r._infoLabel.text, '42% · ?');
+check('every row reaches the menu', r._rowItems.length, 2);
+check('a live reading is not dimmed', r._box.opacity, 255);
+
+r._model.suffix = ' · x 9%';
+r._render();
+check('a suffix is appended', r._infoLabel.text, '42% · ? · x 9%');
+
+r._model.percent = null;
+r._render();
+check('an unknown share renders as a dash', r._infoLabel.text, '—');
+
+r._model.percent = 95;
+r._model.stale = true;
+r._render();
+check('a stale reading is dimmed', r._box.opacity, 110);
+check('90% and over turns the bar red', r._fill.style_class, 'cu-fill cu-fill-red');
+
+/* _notify is the only place where the two shell generations diverge, so it
+ * is checked call for call on each of them. */
+const legacy = newIndicator('legacy');
+legacy.indicator._notify('Test: 90%', 'body', true);
+check('GNOME 42 gets positional arguments and showNotification', legacy.log, [
+    ['source', { title: 'Test', iconName: 'utilities-system-monitor-symbolic' }],
+    ['trayAdd', true],
+    ['notification', { title: 'Test: 90%', body: 'body', hasSource: true }],
+    ['setTransient', false],
+    ['setUrgency', 3],
+    ['showNotification', 'Test: 90%'],
+]);
+
+const modern = newIndicator('modern');
+modern.indicator._notify('Test: 90%', 'body', true);
+check('GNOME 46+ gets parameter objects and addNotification', modern.log, [
+    ['source', { title: 'Test', iconName: 'utilities-system-monitor-symbolic' }],
+    ['trayAdd', true],
+    ['notification', {
+        title: 'Test: 90%', body: 'body', isTransient: false, urgency: 3, hasSource: true,
+    }],
+    ['addNotification', 'Test: 90%'],
+]);
+
+const calmLegacy = newIndicator('legacy');
+calmLegacy.indicator._notify('Test: 20%', 'body', false);
+check('a non-critical notification leaves the urgency alone on GNOME 42',
+    calmLegacy.log.filter(e => e[0] === 'setUrgency').length, 0);
+
+const calmModern = newIndicator('modern');
+calmModern.indicator._notify('Test: 20%', 'body', false);
+check('a non-critical notification is NORMAL on GNOME 46+',
+    calmModern.log.filter(e => e[0] === 'notification')[0][1].urgency, 0);
 
 print('');
 print('%d checks, %d failures'.format(checks, failures));

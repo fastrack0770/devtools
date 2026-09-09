@@ -5,35 +5,91 @@ description: Discovers and invokes agent skills. Use when choosing which skill a
 
 # Using Agent Skills
 
-Skills encode this team's engineering practices, one per development phase. This meta-skill covers picking the right one and combining them.
+Skills encode this team's engineering practices. This map shows the normal flow, useful detours, and the vocabulary beneath both.
 
-## Picking a skill
+## The main flow
 
-Match the task to its phase:
+Start with interview-me when the ask is underspecified, then grilling when the design tree still has open branches. Use opsx:explore for a foggy idea. Move to opsx:propose, applying spec-driven-development, planning-and-task-breakdown, api-and-interface-design, and codebase-design as needed.
+
+During opsx:apply, use incremental-implementation and test-driven-development. Add source-driven-development, frontend-ui-engineering, security-and-hardening, or observability-and-instrumentation when their triggers fit. Finish with code-review-and-quality, then opsx:archive; use opsx:sync when delta specs need merging separately.
+
+OpenSpec is the default spec artifact, not the only path. A small, unambiguous change can go straight to implementation.
+
+## On-ramps
+
+- Something broke: debugging-and-error-recovery.
+- Already mid-merge conflict: resolving-merge-conflicts.
+- A design question cannot be settled on paper: prototype.
+- A big change spans independent file groups: parallel-dev.
+
+## Codebase health
+
+- code-simplification improves local clarity without changing behavior.
+- codebase-design creates deep modules, small interfaces, and clean seams.
+- deprecation-and-migration retires or replaces systems with consumers.
+- performance-optimization starts only from measured slowness or an explicit budget: measure first.
+
+## Vocabulary underneath
+
+- domain-modeling owns domain language and the project's `CONTEXT.md` glossary.
+- codebase-design owns module, interface, depth, seam, adapter, leverage, and locality.
+- writing-for-agents shapes skills, CLAUDE.md, AGENTS.md, and documents reached through pointers.
+- documentation-and-adrs records human-facing documentation and durable decisions.
+
+## Production
+
+ci-cd-and-automation builds automated pipelines and gates. shipping-and-launch handles rollout, rollback, and launch monitoring.
+
+## Phase boundaries
+
+At a phase boundary, choose continue, clear, handoff, subagent, or compact using `context-engineering`'s `.claude/skills/context-engineering/references/phase-boundaries.md`. Keep explore -> propose in one context window; start each apply task fresh so implementation gets a clean, focused context.
+
+## User-invoked skills
+
+handoff, retro, and to-questionnaire are typed by the human because they control session transfer, reflection, or communication to another person. The model can explain when one may help, but only the user starts it.
+
+## Quick lookup
 
 | Situation | Skill |
 |---|---|
-| Unclear what the user actually wants | interview-me |
-| Rough idea that needs shaping | opsx:explore |
-| New feature or significant change, no spec | spec-driven-development |
-| Spec exists, needs a task breakdown | planning-and-task-breakdown |
-| Implementing a multi-file change | incremental-implementation |
-| UI work / API or interface work | frontend-ui-engineering / api-and-interface-design |
-| Need doc-verified framework usage | source-driven-development |
-| High stakes or unfamiliar code | doubt-driven-development |
-| Proving behavior with tests | test-driven-development (browser runtime: browser-testing-with-devtools) |
-| Something broke unexpectedly | debugging-and-error-recovery |
-| Pre-merge review | code-review-and-quality |
-| Working code, too complex | code-simplification |
-| Untrusted input, auth, secrets | security-and-hardening |
-| Performance requirement or regression | performance-optimization |
-| Commit/branch/history questions | git-workflow-and-versioning |
-| Build and deployment pipelines | ci-cd-and-automation |
-| Retiring systems, migrating users | deprecation-and-migration |
-| Recording decisions, writing docs | documentation-and-adrs |
+| API or public contract | api-and-interface-design |
+| Real-browser verification | browser-testing-with-devtools |
+| Pipeline or automated gate | ci-cd-and-automation |
+| Completed change review | code-review-and-quality |
+| Working code is too complex | code-simplification |
+| Module boundary, seam, or depth | codebase-design |
+| Context or rules-file hygiene | context-engineering |
+| Failure or unexpected behavior | debugging-and-error-recovery |
+| Retire a consumed system | deprecation-and-migration |
+| Human docs or durable decision | documentation-and-adrs |
+| Domain terms or CONTEXT.md | domain-modeling |
+| High-stakes adversarial check | doubt-driven-development |
+| User-facing UI | frontend-ui-engineering |
+| Commit, branch, or history | git-workflow-and-versioning |
+| Stress-test a known design | grilling |
+| Portable session transfer | handoff |
+| Multi-file implementation | incremental-implementation |
+| Underspecified request | interview-me |
 | Logs, metrics, traces, alerts | observability-and-instrumentation |
-| Production deploy or launch | shipping-and-launch |
-| Setting up agent context, CLAUDE.md | context-engineering |
+| Implement OpenSpec tasks | opsx:apply (openspec-apply-change) |
+| Archive OpenSpec change | opsx:archive (openspec-archive-change) |
+| Explore a foggy idea | opsx:explore (openspec-explore) |
+| Create OpenSpec artifacts | opsx:propose (openspec-propose) |
+| Sync delta specs | opsx:sync (openspec-sync-specs) |
+| Independent implementation threads | parallel-dev |
+| Measured slowness | performance-optimization |
+| Break requirements into tasks | planning-and-task-breakdown |
+| Answer one question in code | prototype |
+| Active merge/rebase conflict | resolving-merge-conflicts |
+| Trust boundary, auth, secrets | security-and-hardening |
+| Production rollout | shipping-and-launch |
+| Current framework guidance | source-driven-development |
+| Significant change without spec | spec-driven-development |
+| Automated behavior tests | test-driven-development |
+| Questionnaire for another person | to-questionnaire |
+| Skill selection or conflict | using-agent-skills |
+| Human-only provisioning | wizard |
+| Agent-facing document | writing-for-agents |
 
 ## Composing skills
 

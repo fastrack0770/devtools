@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "skipSplash": true,
+  "skipNpxHint": false,
+  "skipGlobalInstall": true,
+  "skipConsoleInstall": true,
+  "injectContextChosen": true
+}

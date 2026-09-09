@@ -14,12 +14,30 @@ suggestion as a routing instruction, not noise: when a hook names a skill that f
 the task, invoke it via the Skill tool before doing the work by hand. When in doubt,
 start with `using-agent-skills`. Do not ignore the suggestions and improvise.
 
-## 2. Delegation rules: `parallel-dev` owns the agent quota; a plan is needed only for delegated file changes
+## 2. Delegation rules: `parallel-dev` is the sole authority for the concurrent-delegate quota; a plan is needed only for delegated file changes
 
 A delegate is any model working for the main one: an Agent tool subagent **or an
 external CLI/MCP session (codex, another Claude model) — codex counts as an agent**.
+Rationale: see `docs/adr/0001-codex-is-a-delegate.md`.
 
 **Strong request:** never spawn delegates outside these rules.
+
+### Authority and precedence
+
+`parallel-dev` is the sole source of truth for the permitted number of concurrent
+delegates. When the skill is loaded, its resolved quota governs — this file states no
+numeric ceiling of its own and must not be read as imposing one. The resolution order
+is defined in that skill's "Quota authority and resolution" section; follow it exactly.
+
+Fallback, and only when the skill cannot be loaded: fail closed — no concurrent
+delegates and no delegated file changes. A single sequential read-only delegate remains
+allowed. This fallback never applies once `parallel-dev` is loaded.
+
+Tool or platform capacity may force delegates to be queued; that does not lower the
+quota the skill resolved, and must not be read as a lower policy limit.
+Quota rationale: see `docs/adr/0002-parallel-dev-owns-the-delegate-quota.md`.
+
+### Delegation gate
 
 - **Delegating file changes** — any delegate that may create, modify, delete, or
   move files, or otherwise change repo/git state — requires `parallel-dev` initiated
@@ -31,10 +49,10 @@ external CLI/MCP session (codex, another Claude model) — codex counts as an ag
   Agent tool or by codex — codex is a full code-editing executor, not advisory-only.
   Launch it through `.claude/skills/parallel-dev/scripts/run_codex.sh --write --cwd
   <thread worktree>`; that mode is allowed only under a validated plan.
-- **Running delegates in parallel** (more than one at once, read-only ones included)
-  also requires `parallel-dev`: it owns the concurrency quota — at most N−1
-  concurrent delegates (default 4), codex consultations included. If no delegate
-  is handed file changes, no plan is needed; only the quota applies.
+- **Running delegates concurrently** — more than one at once, read-only ones and codex
+  consultations included — also requires `parallel-dev`: the skill resolves and owns
+  the concurrency quota. If no delegate is handed file changes, no plan is needed;
+  only the skill-resolved quota applies.
 - **A single sequential read-only delegate** (a codex second opinion, an `Explore`
   lookup) needs neither the skill nor a plan.
 - Launch plan-free delegates read-only: prefer enforced forms (`Explore`/`Plan`
@@ -43,3 +61,15 @@ external CLI/MCP session (codex, another Claude model) — codex counts as an ag
   explicitly forbid writes in its prompt. A read-only delegate that
   concludes edits are needed stops and reports; the main model applies the edits
   itself or delegates them under a validated plan.
+
+## 3. Editing skills or agent docs
+
+When writing or editing a skill, Call the Skill tool with "writing-for-agents".
+
+The skill linter and the release manifest live only in the devtools repository, the
+source these rules are deployed from. Where the repository carries
+`scripts/check_skills.py`, run it after any change under `.claude/skills/`,
+`scripts/hooks/`, or `.claude/skill-manifest.json`, and enter new skills in that
+manifest as in-progress until they have been used on a real task. A project without
+that file (a deploy target) has no such gate: check the edited skill's frontmatter
+(`name` equal to its directory, a `description`) and its `references/` paths by hand.

@@ -1,0 +1,17 @@
+{
+  "_comment": "Promoted skills are deployed by deploy/ai-config.sh; in-progress skills stay in this repo for piloting; scripts/check_skills.py enforces that every skill directory appears in exactly one list.",
+  "promoted": [
+    "api-and-interface-design", "browser-testing-with-devtools", "ci-cd-and-automation",
+    "code-review-and-quality", "code-simplification", "codebase-design", "context-engineering",
+    "debugging-and-error-recovery", "deprecation-and-migration", "documentation-and-adrs",
+    "domain-modeling", "doubt-driven-development", "frontend-ui-engineering",
+    "git-workflow-and-versioning", "grilling", "handoff", "incremental-implementation",
+    "interview-me", "observability-and-instrumentation", "openspec-apply-change",
+    "openspec-archive-change", "openspec-explore", "openspec-propose", "openspec-sync-specs",
+    "parallel-dev", "performance-optimization", "planning-and-task-breakdown", "prototype",
+    "resolving-merge-conflicts", "security-and-hardening", "shipping-and-launch",
+    "source-driven-development", "spec-driven-development", "test-driven-development",
+    "to-questionnaire", "using-agent-skills", "wizard", "writing-for-agents"
+  ],
+  "in_progress": ["branch-review-for-others", "retro"]
+}

@@ -4,6 +4,24 @@ context on decisions rather than on JSON surgery.
 
 Commands (all mutating commands auto-backup the plan, see DURABILITY below):
 
+  start <plan> [--run-branch <name>] [--base <branch>]
+      Open the run's own integration branch in the MAIN working tree: records the
+      branch the run started from (`base_branch`, default: what is checked out now)
+      and creates + checks out `run_branch` (default pd/run-<digest of the plan
+      path>) off it. Everything the run produces — the main model's own thread and
+      every merged thread branch — lands here, never directly on the base branch;
+      `finish` merges it back and deletes it. Run this BEFORE the first `launch`, so
+      thread worktrees branch off the run branch. Re-running is a no-op that just
+      re-checks-out the branch (recovery after a restart). Refuses on a dirty tree
+      or a detached HEAD.
+
+  finish <plan> [--keep-run-branch] [--force]
+      Close the run: every thread must be `merged`, the main tree clean and on the
+      run branch. Retires anything still standing (worktree + thread branch), checks
+      the base branch out, merges the run branch into it, deletes the run branch,
+      prunes worktrees, and reports any `pd/*` branch that survived. The end state is
+      the repository as it was branch-wise, with the work on the base branch.
+
   build <plan> [--rebuild THREAD ...]
       Fill threads[].prompt from the plan's `prompt_template` + per-thread fields.
       The plan stores the boilerplate ONCE (template.intro / template.tail) and each
@@ -56,10 +74,17 @@ Commands (all mutating commands auto-backup the plan, see DURABILITY below):
       --keep-worktree resets only the record. Follow with `build` (the cleared prompt
       is reassembled from the thread's `task`) and `launch`.
 
-  merged <plan> <thread-id> [--commit <sha>]
+  merged <plan> <thread-id> [--commit <sha>] [--keep-worktree] [--force]
       status=merged (+ merge_commit) — recorded by the orchestrator right after
       `git merge` of the thread branch, so a recovery never has to re-derive
-      "what already landed" from the git log.
+      "what already landed" from the git log. Then RETIRES the thread: snapshots the
+      worktree, removes it, and deletes the thread branch, so a finished thread
+      leaves nothing behind. The branch must be an ancestor of HEAD (i.e. really
+      merged) or the deletion is refused and the command exits non-zero with the
+      plan still pointing at what survived. --keep-worktree records the merge only;
+      --force retires regardless (discards unmerged commits).
+      The main model's own thread has no branch — record it here too, so `finish`
+      sees a run in which every thread is accounted for.
 
   status <plan> [-v] [--no-gate]
       One line per thread: id, executor, status, agent id, files counts.
@@ -150,6 +175,29 @@ def backup_dir(args):
     return os.path.join(repo_root(args), ".git", "parallel-dev")
 
 
+def git(root, *argv):
+    return subprocess.run(["git", "-C", root, *argv], capture_output=True, text=True)
+
+
+def current_branch(root):
+    """The branch checked out in the main tree, or "" on a detached HEAD."""
+    res = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    name = res.stdout.strip() if res.returncode == 0 else ""
+    return "" if name in ("", "HEAD") else name
+
+
+def branch_exists(root, name):
+    return git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0
+
+
+def require_clean(root, what):
+    """Branch switching carries uncommitted work along — never do it behind the operator's back."""
+    dirty = git(root, "status", "--porcelain").stdout.strip()
+    if dirty:
+        sys.exit(f"error: the main working tree is not clean, so {what} would drag uncommitted "
+                 f"work across branches. Commit or stash it first:\n{dirty}")
+
+
 def slot_candidates(plan_path, args):
     """Backup filenames this plan may occupy, best first.
 
@@ -233,6 +281,45 @@ def thread_of(plan, thread_id):
         if t.get("id") == thread_id:
             return t
     sys.exit(f"error: no thread with id '{thread_id}' in the plan")
+
+
+def default_run_branch(plan_path):
+    """Deterministic per-run name: the same plan always reopens the same branch, and two
+    concurrent runs under the canonical `parallel-dev-plan.json` name do not collide."""
+    return "pd/run-" + hashlib.sha1(os.path.abspath(plan_path).encode()).hexdigest()[:8]
+
+
+def cmd_start(args):
+    plan = load(args.plan)
+    root = repo_root(args)
+    cur = current_branch(root)
+    run_branch = args.run_branch or plan.get("run_branch") or default_run_branch(args.plan)
+    if cur == run_branch:
+        base = args.base or plan.get("base_branch")
+        if not base:
+            sys.exit(f"error: the main tree is already on '{run_branch}', but the plan records no "
+                     "base_branch, so `finish` would not know where to merge the run back. Pass "
+                     "--base <branch>.")
+        print(f"start: already on run branch {run_branch} (base {base})")
+    else:
+        if not cur:
+            sys.exit("error: the main tree is on a detached HEAD — check out the branch this run "
+                     "should eventually land on, then re-run `start`.")
+        base = args.base or plan.get("base_branch") or cur
+        if base != cur:
+            sys.exit(f"error: this run's base branch is '{base}' but the main tree is on '{cur}' — "
+                     f"check '{base}' out first, so the run branch forks from the right place.")
+        require_clean(root, "creating the run branch")
+        existed = branch_exists(root, run_branch)
+        res = git(root, "checkout", *([run_branch] if existed else ["-b", run_branch]))
+        if res.returncode != 0:
+            sys.exit(f"error: could not check out {run_branch}:\n{res.stderr.strip()}")
+        print(f"start: {'switched to' if existed else 'created'} run branch {run_branch} "
+              f"(base {base})")
+    plan["base_branch"] = base
+    plan["run_branch"] = run_branch
+    plan.pop("finished", None)
+    save(plan, args.plan, args)
 
 
 def cmd_build(args):
@@ -573,21 +660,159 @@ def cmd_reset(args):
           + (f"\nreset: previous attempt salvaged to {salvaged}" if salvaged else ""))
 
 
+def retire_thread(t, thread_id, root, args, force=False):
+    """Take a merged thread's scaffolding down: worktree removed, thread branch deleted.
+
+    A run must not leave `pd/<thread-id>` branches behind — they are an artifact of the
+    parallelization, not of the work. Deletion is gated on the branch actually being an
+    ancestor of HEAD: retiring a thread whose merge never happened would throw the work away,
+    which is the one failure this cleanup must never cause.
+
+    Returns False when anything survived — the caller keeps the plan pointing at it.
+    """
+    br, wt = t.get("branch"), t.get("worktree")
+    # Already gone (a second pass over a thread `merged` retired earlier, or a thread that never
+    # had scaffolding at all — the main model's) is success, not a branch to hunt for.
+    if br and not branch_exists(root, br):
+        t["branch_deleted"] = True
+        br = None
+    wt_live = bool(wt and os.path.isdir(wt))
+    if wt and not wt_live:
+        t["worktree_removed"] = True
+    if not br and not wt_live:
+        return True
+    if br and not force and git(root, "merge-base", "--is-ancestor", br, "HEAD").returncode != 0:
+        print(f"warn: branch {br} is NOT an ancestor of HEAD, so '{thread_id}' is not really "
+              "merged — leaving worktree and branch in place. Merge the thread first, then "
+              "re-run; `--force` deletes it and its unmerged commits.")
+        return False
+    ok = True
+    if wt_live:
+        # The branch is merged, but uncommitted leftovers in the worktree are not covered by
+        # that — snapshot before the forced removal, exactly as `reset` does.
+        if not snapshot_worktree(t, thread_id, args) and not force:
+            print(f"warn: could not snapshot {wt} — not removing it")
+            return False
+        res = git(root, "worktree", "remove", "--force", wt)
+        if res.returncode == 0:
+            t["worktree_removed"] = True
+            print(f"retire: worktree removed ({wt})")
+        else:
+            ok = False
+            print(f"warn: could not remove worktree {wt}: {res.stderr.strip()}")
+    git(root, "worktree", "prune")
+    if br and ok:
+        res = git(root, "branch", "-D" if force else "-d", br)
+        if res.returncode == 0:
+            t["branch_deleted"] = True
+            print(f"retire: branch {br} deleted")
+        else:
+            ok = False
+            print(f"warn: could not delete branch {br}: {res.stderr.strip()}")
+    return ok
+
+
 def cmd_merged(args):
     plan = load(args.plan)
     t = thread_of(plan, args.thread)
-    if t.get("status") not in ("done", "merged"):
+    root = repo_root(args)
+    # The main model's own thread never goes through `done` (there is no report to parse), so
+    # only a delegated thread jumping straight to `merged` is worth a warning.
+    if t.get("executor") == "agent" and t.get("status") not in ("done", "merged"):
         print(f"warn: merging a thread whose status is '{t.get('status')}', not 'done'")
     t["status"] = "merged"
     if args.commit:
         t["merge_commit"] = args.commit
+    retired = True
+    if not args.keep_worktree:
+        retired = retire_thread(t, args.thread, root, args, force=args.force)
     save(plan, args.plan, args)
     print(f"merged: {args.thread}" + (f" @ {args.commit}" if args.commit else ""))
+    if not retired:
+        sys.exit(f"error: the merge of '{args.thread}' is recorded, but its worktree/branch "
+                 "survived — see the warning above. Fix the cause and re-run `merged`, or pass "
+                 "--keep-worktree to leave them standing deliberately.")
+
+
+def cmd_finish(args):
+    plan = load(args.plan)
+    root = repo_root(args)
+    run_branch, base = plan.get("run_branch"), plan.get("base_branch")
+    if not run_branch or not base:
+        sys.exit("error: this run has no run branch recorded — `start` was never run, so there is "
+                 "nothing to merge back and delete. The threads were merged straight into "
+                 f"'{current_branch(root) or 'HEAD'}'; clean up by hand if that is what happened.")
+    open_threads = [t.get("id", "?") for t in plan.get("threads", [])
+                    if t.get("status") != "merged"]
+    if open_threads and not args.force:
+        sys.exit(f"error: not every thread is merged ({', '.join(open_threads)}) — finishing now "
+                 "would merge the run branch back without their work. Merge each thread and "
+                 "record it with `merged` (the main model's own thread included).")
+    cur = current_branch(root)
+    if cur != run_branch:
+        if cur == base and plan.get("finished"):
+            print(f"finish: already finished — on '{base}', run branch {run_branch} is gone")
+            return
+        sys.exit(f"error: the main tree is on '{cur or 'a detached HEAD'}', not on the run branch "
+                 f"'{run_branch}' — check it out first.")
+    require_clean(root, "merging the run branch back")
+    # Any thread still holding scaffolding (e.g. merged with --keep-worktree) comes down now:
+    # `finish` is what guarantees the end state has no parallel-dev branches left.
+    for t in plan.get("threads", []):
+        if t.get("branch") or t.get("worktree"):
+            if not retire_thread(t, t.get("id", "?"), root, args, force=args.force):
+                save(plan, args.plan, args)
+                sys.exit(f"error: thread '{t.get('id')}' could not be retired — see the warning "
+                         "above. Resolve it, then re-run `finish`.")
+    res = git(root, "checkout", base)
+    if res.returncode != 0:
+        save(plan, args.plan, args)
+        sys.exit(f"error: could not check out '{base}':\n{res.stderr.strip()}")
+    res = git(root, "merge", "--no-edit", run_branch)
+    if res.returncode != 0:
+        git(root, "merge", "--abort")
+        # Put the tree back exactly where `finish` found it, so resolving the conflict and
+        # re-running is the whole recovery — no half-finished run to reason about.
+        back = git(root, "checkout", run_branch)
+        save(plan, args.plan, args)
+        sys.exit(f"error: merging {run_branch} into {base} failed (the merge was aborted, so "
+                 f"'{base}' is untouched and {run_branch} still holds every commit):\n"
+                 f"{res.stdout.strip()}\n{res.stderr.strip()}\n"
+                 + (f"The main tree is back on {run_branch}. Rebase or merge {base} into it by "
+                    "hand, resolve the conflict, then re-run `finish`."
+                    if back.returncode == 0 else
+                    f"warn: could not return to {run_branch}: {back.stderr.strip()}"))
+    print(f"finish: {run_branch} merged into {base}")
+    if not args.keep_run_branch:
+        res = git(root, "branch", "-d", run_branch)
+        if res.returncode == 0:
+            plan["run_branch_deleted"] = True
+            print(f"finish: branch {run_branch} deleted")
+        else:
+            print(f"warn: could not delete {run_branch}: {res.stderr.strip()}")
+    git(root, "worktree", "prune")
+    plan["finished"] = True
+    head = git(root, "rev-parse", "HEAD").stdout.strip()
+    if head:
+        plan["final_commit"] = head
+    save(plan, args.plan, args)
+    leftovers = [ln.strip().lstrip("* ").strip()
+                 for ln in git(root, "branch", "--list", "pd/*").stdout.splitlines() if ln.strip()]
+    if leftovers:
+        print("warn: parallel-dev branches still present: " + ", ".join(leftovers)
+              + "\n      the run is supposed to leave none — check what they hold before "
+                "deleting them.")
+    print(f"finish: run closed on {base} @ {head[:12]}")
 
 
 def cmd_status(args):
     plan = load(args.plan)
     unfinished, failed = 0, []
+    if plan.get("run_branch"):
+        state = "finished" if plan.get("finished") else "open"
+        print(f"run: {plan['run_branch']} -> base {plan.get('base_branch', '?')} [{state}]")
+    else:
+        print("run: no run branch recorded — `start` has not been run")
     for t in plan.get("threads", []):
         st = t.get("status", "pending")
         if st in ("pending", "running"):
@@ -615,6 +840,8 @@ def cmd_status(args):
                 detail.append("reported OUTSIDE boundary: " + ", ".join(outside))
         if t.get("unparsed_report"):
             detail.append("report was NOT parsed (--allow-unparsed): actual_files unverified")
+        if t.get("branch") and not t.get("branch_deleted"):
+            detail.append("branch NOT deleted yet")
         for key, label in (("worktree", "worktree"), ("branch", "branch"),
                            ("merge_commit", "merge"), ("patch", "patch"),
                            ("salvaged_patch", "salvaged patch"),
@@ -672,12 +899,14 @@ def main():
     p.add_argument("--repo", help="git repository root (default: current toplevel)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    s = sub.add_parser("start"); s.add_argument("plan"); s.add_argument("--run-branch", help="name of the run's integration branch (default: pd/run-<digest of the plan path>)"); s.add_argument("--base", help="branch the run must merge back into (default: the one checked out now)"); s.set_defaults(fn=cmd_start)
+    s = sub.add_parser("finish"); s.add_argument("plan"); s.add_argument("--keep-run-branch", action="store_true", help="merge the run branch back but do not delete it"); s.add_argument("--force", action="store_true", help="close the run even with unmerged threads, and retire their branches regardless (destroys that work)"); s.set_defaults(fn=cmd_finish)
     s = sub.add_parser("build"); s.add_argument("plan"); s.add_argument("--rebuild", action="append", metavar="THREAD"); s.set_defaults(fn=cmd_build)
     s = sub.add_parser("launch"); s.add_argument("plan"); s.add_argument("thread"); s.add_argument("agent_id"); s.add_argument("--worktree"); s.add_argument("--branch"); s.set_defaults(fn=cmd_launch)
     s = sub.add_parser("done"); s.add_argument("plan"); s.add_argument("thread"); s.add_argument("--report"); s.add_argument("--summary"); s.add_argument("--allow-unparsed", action="store_true", help="record `done` even when the report does not parse (skips the boundary check)"); s.set_defaults(fn=cmd_done)
     s = sub.add_parser("fail"); s.add_argument("plan"); s.add_argument("thread"); s.add_argument("--note"); s.set_defaults(fn=cmd_fail)
     s = sub.add_parser("reset"); s.add_argument("plan"); s.add_argument("thread"); s.add_argument("--keep-worktree", action="store_true", help="leave the worktree and branch in place (default: salvage a patch, then delete both)"); s.add_argument("--force", action="store_true", help="delete the worktree and branch even when the snapshot failed or the branch holds unmerged commits (destroys that work)"); s.set_defaults(fn=cmd_reset)
-    s = sub.add_parser("merged"); s.add_argument("plan"); s.add_argument("thread"); s.add_argument("--commit"); s.set_defaults(fn=cmd_merged)
+    s = sub.add_parser("merged"); s.add_argument("plan"); s.add_argument("thread"); s.add_argument("--commit"); s.add_argument("--keep-worktree", action="store_true", help="record the merge only (default: also remove the worktree and delete the thread branch)"); s.add_argument("--force", action="store_true", help="retire the thread even when its branch is not merged into HEAD (destroys that work)"); s.set_defaults(fn=cmd_merged)
     s = sub.add_parser("status"); s.add_argument("plan"); s.add_argument("-v", "--verbose", action="store_true"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(fn=cmd_status)
     s = sub.add_parser("mirror"); s.add_argument("plan"); s.set_defaults(fn=cmd_mirror)
     s = sub.add_parser("restore"); s.add_argument("plan"); s.add_argument("--force", action="store_true"); s.set_defaults(fn=cmd_restore)

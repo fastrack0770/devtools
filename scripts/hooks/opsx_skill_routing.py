@@ -13,10 +13,12 @@ hookSpecificOutput.additionalContext, or nothing.
 import json
 import sys
 
-# Phase -> reminder text (this map mirrors the "Skill routing" section in CLAUDE.md).
+# Phase reminders mirror `using-agent-skills` and are checked by scripts/check_skills.py.
 PROPOSE = ("[skill-routing] Planning phase (propose/explore): consider "
            "spec-driven-development, planning-and-task-breakdown, "
            "api-and-interface-design (if introducing a new contract/endpoint), "
+           "codebase-design (when the change reshapes a module's interface), "
+           "domain-modeling (when new domain terms appear), "
            "opsx:explore / interview-me (if the spec is vague), "
            "doubt-driven-development (high stakes/irreversible).")
 APPLY = ("[skill-routing] Implementation phase (apply): "
@@ -29,6 +31,14 @@ APPLY = ("[skill-routing] Implementation phase (apply): "
          "Before finishing — code-review-and-quality on the diff.")
 ARCHIVE = ("[skill-routing] Before archive: run code-review-and-quality and "
            "code-simplification on the change diff.")
+
+REMINDER_SKILLS = (
+    "spec-driven-development", "planning-and-task-breakdown", "api-and-interface-design",
+    "codebase-design", "domain-modeling", "opsx:explore", "interview-me",
+    "doubt-driven-development", "incremental-implementation", "test-driven-development",
+    "source-driven-development", "frontend-ui-engineering", "security-and-hardening",
+    "observability-and-instrumentation", "code-review-and-quality", "code-simplification",
+)
 
 
 def reminder_for(skill: str) -> str | None:

@@ -11,9 +11,9 @@ Write a structured specification before writing any code. The spec is the shared
 
 **In this repository the spec workflow is OpenSpec.** This skill defines the principles; the mechanics live elsewhere:
 
-- **Artifacts (proposal / design / specs / tasks)** → `openspec-propose` (or `openspec-explore` first, if the idea is still vague). Do not invent a parallel spec format — OpenSpec change artifacts *are* the spec.
-- **Task breakdown** → `planning-and-task-breakdown` (task template, sizing, dependency ordering, checkpoints).
-- **Implementation** → `openspec-apply-change`, following `incremental-implementation` and `test-driven-development`.
+- **Artifacts (proposal / design / specs / tasks):** Call the Skill tool with "openspec-propose" (or with "openspec-explore" first, if the idea is still vague; with "grilling" when the design has many open branches). Do not invent a parallel spec format — OpenSpec change artifacts *are* the spec.
+- **Task breakdown:** Call the Skill tool with "planning-and-task-breakdown" (tracer bullets, sizing, blocked-by edges, checkpoints).
+- **Implementation:** Call the Skill tool with "openspec-apply-change", which applies incremental-implementation and test-driven-development.
 
 ## When to Use
 
