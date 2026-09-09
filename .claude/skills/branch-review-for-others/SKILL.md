@@ -19,24 +19,35 @@ two is the strongest signal in the report.
 ## 1. Establish scope and intent
 
 ```bash
-git log --oneline <base>..HEAD
-git diff --stat <base>...HEAD
+MB=$(git merge-base <base> HEAD)
+git log --oneline $MB..HEAD
+git diff --numstat $MB..HEAD
 ```
 
-Three dots: the diff is against the merge base, so commits that landed on
-`<base>` after the fork stay out of the review. Read the change's intent before
-its implementation — an OpenSpec change under `openspec/changes/`, a linked task
-or issue, the commit messages — and sort the diff into real code versus
-mechanical bulk (docs, generated files, renames).
+Resolve the merge base to a SHA and carry that SHA through the review, so
+commits that landed on `<base>` after the fork stay out of it. A branch name
+handed to a delegate resolves to a wider range, and the delegate then reviews
+already-merged code in good faith — the single largest waste in a delegated
+review. Read the change's intent before its implementation — an OpenSpec change
+under `openspec/changes/`, a linked task or issue, the commit messages — and
+sort the `--numstat` list into real code versus mechanical bulk (docs, generated
+files, renames), keeping it ordered by added lines.
 
-Done when: the base resolves, the diff is non-empty, the intent is written down
-in three or four lines, and you know which files carry the risk.
+Done when: the merge-base SHA is pinned, the diff is non-empty, the intent is
+written down in three or four lines, and the file list is ordered by churn with
+the mechanical bulk marked.
 
-## 2. Launch codex, then keep working
+## 2. Launch codex on a closed reading plan, then keep working
+
+The delegate spends its whole budget on whatever the prompt leaves open, so hand
+it a closed plan: the merge-base SHA, the file list from step 1 as the set under
+review, a diff-first reading method, a file budget, and a stop rule. Load
+`.claude/skills/code-review-and-quality/references/delegate-prompt.md` and build
+the prompt from it — that file is the single source of truth for the prompt's
+shape, wherever a delegated review is launched from.
 
 Codex runs unattended for minutes; start it before your own pass so the two
-overlap. Write the prompt to a file — load `references/codex-prompt.md` for what
-it must carry — and launch read-only in the background:
+overlap. Write the prompt to a file and launch read-only in the background:
 
 ```bash
 .claude/skills/parallel-dev/scripts/run_codex.sh --cwd <repo root> \
@@ -48,8 +59,9 @@ sequential read-only delegate needs neither `parallel-dev` nor a partitioning
 plan. When `which codex` finds nothing or the run returns no message, continue
 single-pass and record that in the report's unverified section.
 
-Done when: codex is running (or its absence is noted) and your own pass has
-started without waiting for it.
+Done when: the prompt carries the SHA, the file list, the reading method, a
+budget and a stop rule; codex is running (or its absence is noted); and your own
+pass has started without waiting for it.
 
 ## 3. Your own pass
 
@@ -86,7 +98,8 @@ Neither pass gets to assert.
   promoting it; downgrade findings whose failure scenario does not survive the
   code; drop findings about files the change never touched.
 - **Record what you could not verify** (a test suite that does not run here, a
-  device you do not have) as a report section rather than leaving it out.
+  device you do not have) as a report section rather than leaving it out, and
+  put the files the delegate's coverage line left unexamined in that section.
 
 Done when: every Critical and required finding has been checked against the code
 or reproduced, and the unverified list is written.
@@ -126,8 +139,10 @@ changed.
 
 ## Verification
 
-Base resolved and three-dot diff non-empty; codex launched read-only via
-`run_codex.sh` or its absence recorded; code-review-and-quality's quality axes
+Merge-base SHA pinned and its diff non-empty; the delegate prompt carries that
+SHA, the file list, the reading method, a budget and a stop rule; codex launched
+read-only via `run_codex.sh` or its absence recorded; the delegate's coverage
+line recorded; code-review-and-quality's quality axes
 and spec axis reported; every Critical and required finding verified or
 reproduced; findings attributed, numbered, severity-ranked; report saved as a
 file that stands alone; verdict stated; reviewed branch left unmodified.

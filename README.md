@@ -236,10 +236,17 @@ format; changing it over accumulated memory is a migration, not an upgrade.
 ## Wiring
 
 `agentmemory connect` does the installing. Two gaps it leaves are handled by
-`agentmemory/agent-wiring.py`: the `env.AGENTMEMORY_INJECT_CONTEXT` key in
-`~/.claude/settings.json`, which the CLI never writes, and removal, for which it offers
-only the destructive `agentmemory remove`. Both operate on agentmemory's own entries and
-leave every foreign hook, MCP server and env key in those files alone.
+`agentmemory/agent-wiring.py`: the keys in `~/.claude/settings.json` the CLI never
+writes, and removal, for which it offers only the destructive `agentmemory remove`. Both
+operate on agentmemory's own entries and leave every foreign hook, MCP server and env key
+in those files alone.
+
+Two keys go into `~/.claude/settings.json`: `env.AGENTMEMORY_INJECT_CONTEXT="true"`, which
+turns context injection on, and `autoMemoryEnabled: false`, which turns Claude Code's own
+auto-memory off — left on, it writes and injects a second set of notes beside agentmemory's,
+neither aware of the other. A key that already carries somebody else's value is reported and
+left alone; `FORCE=1` overrules it. Uninstall removes `autoMemoryEnabled` only while it still
+reads `false`.
 
 One asymmetry worth knowing: the Claude adapter tops its hooks up on every run, while
 the Codex one returns early as soon as its MCP server is wired and never reaches the

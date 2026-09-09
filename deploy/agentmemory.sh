@@ -349,12 +349,14 @@ wire_agents() {
 
 # The Claude adapter installs hooks even when the MCP server is already wired,
 # and it only strips entries that point into its own plugin dir, so foreign
-# hooks survive. Nothing for us to do beyond calling it and adding the env key
-# it never writes.
+# hooks survive. Nothing for us to do beyond calling it and adding the two
+# settings keys it never writes: the context-injection env key, and
+# autoMemoryEnabled=false, which keeps Claude's built-in auto-memory from
+# running a second, competing memory next to this one.
 wire_claude() {
     am connect claude-code --with-hooks
     local rc=0
-    python3 "$WIRING" claude-env-set || rc=$?
+    python3 "$WIRING" claude-settings-set || rc=$?
     [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || die "failed to update ~/.claude/settings.json"
 }
 

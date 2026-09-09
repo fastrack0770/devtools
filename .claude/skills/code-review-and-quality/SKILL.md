@@ -50,6 +50,12 @@ The axis stays separate because standards can pass while the spec fails. The spe
 
 Done when the fixed point and non-empty diff are verified, both available axes are reported without cross-axis reranking, and the verification evidence is assessed.
 
+## Delegated review passes
+
+A delegate handed a review — codex, or an Agent tool subagent — reads until its budget ends, and what it reads is decided entirely by the prompt. Two failures dominate: it reviews code outside the range, and it reads whole files where the diff hunks would have answered the question. Before launching one, load `references/delegate-prompt.md` and build the prompt from it. The contract in short: pass the merge-base SHA rather than a branch name, paste the `git diff --numstat` file list as the set under review and its priority order, give a diff-first reading method with a capped allowance for numbered slices around a hunk, quote the repository rules the change could touch instead of pointing at the rules file, and set a file budget, a stop rule, and a coverage line to report on stopping.
+
+Findings come back as a draft: confirm each Critical against the code, and carry the delegate's unexamined files into the review as a coverage gap rather than as clean.
+
 ## Change sizing
 
 Small focused changes review better: ~100 lines is ideal, ~300 acceptable for one logical change, ~1000 needs splitting. Refactoring and behavior change are separate changes. For mechanical renames, deletions, or generated code, review intent rather than every line.
@@ -73,4 +79,4 @@ Approve when all Critical and required quality findings are resolved, spec-axis 
 
 ## Verification
 
-Fixed point resolves and the three-dot diff is non-empty; five quality axes reviewed; spec axis reported separately or says "no spec available"; findings cite evidence; tests, build, and verification story assessed before the verdict.
+Fixed point resolves and the three-dot diff is non-empty; five quality axes reviewed; spec axis reported separately or says "no spec available"; any delegated pass launched on a merge-base SHA, an explicit file list, a budget and a stop rule; findings cite evidence; tests, build, and verification story assessed before the verdict.

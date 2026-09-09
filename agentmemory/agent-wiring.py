@@ -3,15 +3,17 @@
 
 Usage: agent-wiring.py <command>
 
-  claude-env-set      add env.AGENTMEMORY_INJECT_CONTEXT="true" to ~/.claude/settings.json
-  claude-env-unset    remove that key again (and the env object if it empties)
-  codex-hooks-ok      exit 0 if ~/.codex/hooks.json carries live agentmemory hooks
-  claude-unwire       strip agentmemory hooks, the env key and the MCP server
-  codex-unwire        strip agentmemory hooks and the [mcp_servers.agentmemory] block
+  claude-settings-set    write env.AGENTMEMORY_INJECT_CONTEXT="true" and
+                         autoMemoryEnabled=false to ~/.claude/settings.json
+  claude-settings-unset  remove those keys again (and the env object if it empties)
+  claude-hooks-ok        exit 0 if ~/.claude/settings.json carries live agentmemory hooks
+  codex-hooks-ok         exit 0 if ~/.codex/hooks.json carries live agentmemory hooks
+  claude-unwire          strip agentmemory hooks, those keys and the MCP server
+  codex-unwire           strip agentmemory hooks and the [mcp_servers.agentmemory] block
 
 `agentmemory connect` owns installation; this owns the two gaps it leaves —
-the env key it never writes, and removal, for which the CLI offers only the
-destructive `agentmemory remove`.
+the settings keys it never writes, and removal, for which the CLI offers only
+the destructive `agentmemory remove`.
 
 Every command is idempotent and reports what it did on stdout. Exit codes:
 0 = done or already in that state, 3 = deliberately skipped (the caller
@@ -41,6 +43,10 @@ CODEX_TOML = os.path.join(HOME, ".codex", "config.toml")
 
 ENV_KEY = "AGENTMEMORY_INJECT_CONTEXT"
 ENV_VALUE = "true"
+# Claude Code's own auto-memory writes and injects a second memory beside this
+# one: two sets of notes competing for the same context window, neither aware
+# of the other. agentmemory is only worth installing as the single one.
+AUTO_KEY = "autoMemoryEnabled"
 MARKER = "@agentmemory/agentmemory"
 TOML_SECTIONS = ("[mcp_servers.agentmemory]", "[mcp_servers.agentmemory.env]")
 
@@ -131,60 +137,95 @@ def live_hook_count(path):
     return live
 
 
-def claude_env_set():
+def claude_settings_set():
+    """Write the two keys `agentmemory connect` leaves alone.
+
+    A key someone else already set to another value is reported and left as
+    is: a settings file is a user's, and a wiring step is not the place to
+    overrule a deliberate choice. FORCE=1 overrules it anyway.
+    """
     data = load_json(CLAUDE_SETTINGS) or {}
     env = data.get("env")
     if env is not None and not isinstance(env, dict):
         print(f'"env" in {CLAUDE_SETTINGS} is not an object — left alone')
         return 3
-    current = (env or {}).get(ENV_KEY)
+    env = dict(env or {})
+    changed, skipped = [], False
+
+    current = env.get(ENV_KEY)
     if current == ENV_VALUE:
         print(f"env.{ENV_KEY} already set")
-        return 0
-    if current is not None and not FORCE:
+    elif current is not None and not FORCE:
         print(f'env.{ENV_KEY} is "{current}" — left as is (FORCE=1 to set "{ENV_VALUE}")')
-        return 3
-    data["env"] = {**(env or {}), ENV_KEY: ENV_VALUE}
-    print(f"env.{ENV_KEY} set{write_json(CLAUDE_SETTINGS, data)}")
-    return 0
+        skipped = True
+    else:
+        env[ENV_KEY] = ENV_VALUE
+        changed.append(f"env.{ENV_KEY}")
+
+    current = data.get(AUTO_KEY)
+    if current is False:
+        print(f"{AUTO_KEY} already false")
+    elif current is not None and not FORCE:
+        print(f"{AUTO_KEY} is {json.dumps(current)} — left as is (FORCE=1 to set false)")
+        skipped = True
+    else:
+        data[AUTO_KEY] = False
+        changed.append(AUTO_KEY)
+
+    if changed:
+        data["env"] = env
+        print(f"{' and '.join(changed)} set{write_json(CLAUDE_SETTINGS, data)}")
+    return 3 if skipped else 0
 
 
-def claude_env_unset():
+def claude_settings_unset():
     data = load_json(CLAUDE_SETTINGS)
-    if not isinstance(data, dict) or not isinstance(data.get("env"), dict):
-        print(f"env.{ENV_KEY} not present")
+    if not isinstance(data, dict):
+        print("nothing of ours in the settings")
         return 0
-    if ENV_KEY not in data["env"]:
-        print(f"env.{ENV_KEY} not present")
-        return 0
-    del data["env"][ENV_KEY]
-    if not data["env"]:
-        del data["env"]
-    print(f"env.{ENV_KEY} removed{write_json(CLAUDE_SETTINGS, data)}")
+    removed = drop_settings(data)
+    if removed:
+        print(f"removed {' and '.join(removed)}{write_json(CLAUDE_SETTINGS, data)}")
+    else:
+        print("nothing of ours in the settings")
     return 0
+
+
+def drop_settings(data):
+    """Remove our two keys from a parsed settings object, in place.
+
+    Returns the names removed. autoMemoryEnabled goes only when it still
+    carries the value we wrote — a `true` there is somebody's own choice.
+    """
+    removed = []
+    env = data.get("env")
+    if isinstance(env, dict) and ENV_KEY in env:
+        del env[ENV_KEY]
+        if not env:
+            del data["env"]
+        removed.append(f"env.{ENV_KEY}")
+    if data.get(AUTO_KEY) is False:
+        del data[AUTO_KEY]
+        removed.append(AUTO_KEY)
+    return removed
 
 
 def claude_unwire():
     settings = load_json(CLAUDE_SETTINGS)
     if isinstance(settings, dict):
         cleaned, removed = strip_hooks(settings.get("hooks"))
-        env = settings.get("env")
-        drop_env = isinstance(env, dict) and ENV_KEY in env
-        if removed or drop_env:
-            if cleaned:
-                settings["hooks"] = cleaned
-            else:
-                settings.pop("hooks", None)
-            if drop_env:
-                del env[ENV_KEY]
-                if not env:
-                    del settings["env"]
+        keys = drop_settings(settings)
+        if removed or keys:
+            if removed:
+                if cleaned:
+                    settings["hooks"] = cleaned
+                else:
+                    settings.pop("hooks", None)
             note = write_json(CLAUDE_SETTINGS, settings)
             what = []
             if removed:
                 what.append(f"{removed} hook entr{'y' if removed == 1 else 'ies'}")
-            if drop_env:
-                what.append(f"env.{ENV_KEY}")
+            what += keys
             print(f"removed {' and '.join(what)} from {CLAUDE_SETTINGS}{note}")
         else:
             print(f"nothing of ours in {CLAUDE_SETTINGS}")
@@ -252,8 +293,8 @@ def codex_unwire():
 
 
 COMMANDS = {
-    "claude-env-set": claude_env_set,
-    "claude-env-unset": claude_env_unset,
+    "claude-settings-set": claude_settings_set,
+    "claude-settings-unset": claude_settings_unset,
     "codex-hooks-ok": lambda: 0 if live_hook_count(CODEX_HOOKS) else 1,
     "claude-hooks-ok": lambda: 0 if live_hook_count(CLAUDE_SETTINGS) else 1,
     "claude-unwire": claude_unwire,
