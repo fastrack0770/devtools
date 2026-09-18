@@ -7,6 +7,7 @@
 #   make install gnome-extension                  install the AI Usage GNOME Shell extension
 #                                                 (installs the runtime first)
 #   make install ai-config PROJECT=<dir>          deploy the Claude Code + Codex config into <dir>
+#   make install ai-config GLOBAL=1               install skills + routing hooks into ~/.claude, ~/.codex
 #   make install agentmemory                      the local memory stack for the agents
 #   make install bash-scripts gnome-extension     several components at once
 #
@@ -27,6 +28,7 @@ EXT_ROOT := $(HOME)/.local/share/gnome-shell/extensions
 EXT_DIR := $(EXT_ROOT)/$(UUID)
 
 PROJECT ?=
+GLOBAL ?=
 
 COMPONENTS := bash-scripts ai-config ai-usage gnome-extension agentmemory
 # Pre-rename component name — still accepted, routed to do-ai-config with a notice.
@@ -97,6 +99,7 @@ help:
 	@echo "  make install ai-usage                       install the shared usage runtime on its own"
 	@echo "  make install gnome-extension                install the AI Usage GNOME Shell extension"
 	@echo "  make install ai-config PROJECT=<dir>        deploy the Claude Code + Codex config into <dir>"
+	@echo "  make install ai-config GLOBAL=1             install skills + routing hooks into ~/.claude, ~/.codex"
 	@echo "  make install agentmemory                    local memory stack (Docker) + agent hooks"
 	@echo
 	@echo "  Components combine: make install bash-scripts gnome-extension"
@@ -140,11 +143,12 @@ do-bash-scripts:
 ## 2. Coding-agent configuration — Claude Code skills/commands/hooks/CLAUDE.md
 ##    plus the Codex skills and AGENTS.md.
 do-ai-config:
-	@if [ -z "$(PROJECT)" ]; then \
-		echo "Usage: make install ai-config PROJECT=/path/to/project" >&2; \
+	@if [ -z "$(PROJECT)" ] && [ -z "$(GLOBAL)" ]; then \
+		echo "Usage: make install ai-config PROJECT=/path/to/project   (and/or GLOBAL=1)" >&2; \
 		exit 1; \
 	fi
-	$(DEPLOY)/ai-config.sh "$(PROJECT)"
+	@if [ -n "$(GLOBAL)" ]; then $(DEPLOY)/ai-config.sh --global; fi
+	@if [ -n "$(PROJECT)" ]; then $(DEPLOY)/ai-config.sh "$(PROJECT)"; fi
 
 # The component was renamed once it started deploying the Codex config too.
 do-claude-config: do-ai-config

@@ -87,6 +87,23 @@ Codex never sees `CLAUDE.md`, so it gets `AGENTS.md` — a pointer to `CLAUDE.md
 copy of it. The skill-routing hooks stay Claude-only (Codex has no equivalent wired here);
 `AGENTS.md` says as much, so a Codex session picks its skills itself.
 
+```sh
+deploy/ai-config.sh --global        # or: make install ai-config GLOBAL=1
+```
+
+Installs the same two skill sets into `~/.claude/skills` and `~/.codex/skills` (honouring
+`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), so both agents have them in every project, and makes
+the skill-routing hooks global too: the scripts go to `~/.claude/hooks/devtools/` and their
+wiring is merged into the user-level `settings.json` (other keys and hooks untouched; an
+invalid `settings.json` is left alone). The global hook stays silent in a project whose own
+`.claude/settings.json` wires the same script, so nothing fires twice. The rules files stay
+per-project.
+
+Two caveats: a personal Claude skill shadows a project skill of the same name, so re-run
+`--global` after updating skills or a stale copy wins; and the few skills that point at
+project paths (`.claude/skills/<other>/…`, `.claude/opsx/`) only resolve those in a
+deployed project.
+
 **Re-run it to pull skill updates into a project** — that is the intended update path,
 so the deploy is idempotent. In `CLAUDE.md` the base rules live in a managed block:
 
