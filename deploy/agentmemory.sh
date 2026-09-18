@@ -498,8 +498,8 @@ do_start() {
 do_stop() {
     step "Containers"
     if [ -f "$COMPOSE_FILE" ]; then
-        # `stop`, not `down`: the containers stay, and restart:unless-stopped
-        # is cleared, so an explicit stop survives a reboot.
+        # `stop`, not `down`: the containers stay available for a quick
+        # `make start`; restart:on-failure does not revive a clean stop.
         compose stop
         note "stopped"
     else

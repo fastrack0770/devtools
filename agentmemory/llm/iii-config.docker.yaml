@@ -56,6 +56,8 @@ workers:
       # lagged", и этот WARN попадает в тот же поток, который подписчик
       # не успевает разгребать — положительная обратная связь (#519).
       sampling_ratio: 0.1
-      metrics_enabled: true
-      logs_enabled: true
+      # exporter: memory retains metrics and logs in engine memory, but
+      # agentmemory does not read them. This caused OOM on a live corpus.
+      metrics_enabled: false
+      logs_enabled: false
       logs_console_output: false

@@ -243,7 +243,9 @@ extension in place. Remove it with `make uninstall gnome-extension`.
 both agents capture what a session does, a local LLM compresses it, and the next session
 starts with the relevant parts already in context. Nothing leaves the machine.
 
-Three containers, ~8 GB of RAM between them, all on loopback:
+Three containers, up to 9 GB of RAM between them, all on loopback. They restart
+after a process failure, but not after a reboot; use `make start` when you want the
+GPU-backed stack:
 
 | Service | Image | What it does |
 |---|---|---|
