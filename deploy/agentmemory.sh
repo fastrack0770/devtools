@@ -366,14 +366,40 @@ wire_claude() {
 # reaches the hook installer. --force also rewrites the [mcp_servers.agentmemory]
 # block in config.toml, hence the extra backup of our own: the vendor makes one
 # too, but a config.toml is not a file to be casual about.
+#
+# The hooks the adapter writes are still mute: the scripts inject context only
+# with AGENTMEMORY_INJECT_CONTEXT=true in their environment, and unlike Claude
+# Code, Codex has no settings key to pass it through. codex-inject-set puts it
+# on the hook command lines, and runs on every pass — a vendor re-install
+# writes the bare commands back.
+#
+# Codex keeps a memory of its own as well (the `memories` feature); like
+# Claude's auto-memory it would compete with this one, so codex-memory-set
+# writes memories=false into config.toml — explicitly, not by relying on
+# today's default.
+#
+# Codex trusts a hook by the hash of its definition, so any change to
+# hooks.json — fresh hooks or just the prefix — means another review; hence
+# the comparison rather than a warning tied to one of the two steps.
 wire_codex() {
+    local hooks="$HOME/.codex/hooks.json" before
+    before="$(cksum "$hooks" 2>/dev/null || true)"
+
     if python3 "$WIRING" codex-hooks-ok; then
         note "codex hooks already installed and resolvable"
-        return 0
+    else
+        local toml="$HOME/.codex/config.toml"
+        if [ -f "$toml" ]; then note "backed up config.toml to $(backup_of "$toml")"; fi
+        am connect codex --with-hooks --force
     fi
-    local toml="$HOME/.codex/config.toml"
-    if [ -f "$toml" ]; then note "backed up config.toml to $(backup_of "$toml")"; fi
-    am connect codex --with-hooks --force
+    local rc=0
+    python3 "$WIRING" codex-inject-set || rc=$?
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || die "failed to update $hooks"
+    rc=0
+    python3 "$WIRING" codex-memory-set || rc=$?
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || die "failed to update $HOME/.codex/config.toml"
+
+    [ "$before" != "$(cksum "$hooks" 2>/dev/null || true)" ] || return 0
     warn "Codex only runs hooks it has been shown: start 'codex' (the TUI) once and
          choose \"Trust all and continue\" at the \"Hooks need review\" prompt.
          'codex exec' never shows that prompt, so until then the hooks stay inert."
@@ -408,6 +434,18 @@ verify() {
         note "codex hooks: installed, scripts resolve (approve them once in the codex TUI)"
     else
         note "codex hooks: MISSING or pointing at scripts that no longer exist"
+        ok=0
+    fi
+    if python3 "$WIRING" codex-inject-ok; then
+        note "codex context injection: on"
+    else
+        note "codex context injection: OFF — the hooks capture, but a session starts with no memory"
+        ok=0
+    fi
+    if python3 "$WIRING" codex-memory-ok; then
+        note "codex own memory: off"
+    else
+        note "codex own memory: not switched off — memories=false missing from ~/.codex/config.toml"
         ok=0
     fi
 

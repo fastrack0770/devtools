@@ -304,11 +304,12 @@ format; changing it over accumulated memory is a migration, not an upgrade.
 
 ## Wiring
 
-`agentmemory connect` does the installing. Two gaps it leaves are handled by
+`agentmemory connect` does the installing. Three gaps it leaves are handled by
 `agentmemory/agent-wiring.py`: the keys in `~/.claude/settings.json` the CLI never
-writes, and removal, for which it offers only the destructive `agentmemory remove`. Both
-operate on agentmemory's own entries and leave every foreign hook, MCP server and env key
-in those files alone.
+writes, the context-injection switch the Codex hooks never receive, and removal, for
+which it offers only the destructive `agentmemory remove`. All of them operate on
+agentmemory's own entries and leave every foreign hook, MCP server and env key in those
+files alone.
 
 Two keys go into `~/.claude/settings.json`: `env.AGENTMEMORY_INJECT_CONTEXT="true"`, which
 turns context injection on, and `autoMemoryEnabled: false`, which turns Claude Code's own
@@ -316,6 +317,21 @@ auto-memory off — left on, it writes and injects a second set of notes beside 
 neither aware of the other. A key that already carries somebody else's value is reported and
 left alone; `FORCE=1` overrules it. Uninstall removes `autoMemoryEnabled` only while it still
 reads `false`.
+
+Codex has no such settings key, and its hook entries have no `env` field, while the hook
+scripts read `AGENTMEMORY_INJECT_CONTEXT` from their own process environment only — not
+from `~/.agentmemory/.env`. Left as the CLI writes them, the Codex hooks capture a session
+but start the next one with nothing in context, which looks exactly like "Codex ignores
+agentmemory". So the installer prefixes every agentmemory command in `~/.codex/hooks.json`
+with `env AGENTMEMORY_INJECT_CONTEXT=true`, on every run, because a vendor re-install
+writes the bare commands back. Codex trusts a hook by the hash of its definition, so this
+edit, like any other change to that file, brings the "Hooks need review" prompt back once.
+
+Codex keeps a memory of its own too — the `memories` feature, notes on disk under
+`~/.codex/`. It is off by default today, but the installer writes `memories = false` under
+`[features]` in `~/.codex/config.toml` so the choice does not hang on a vendor default. The
+same rules as for `autoMemoryEnabled` apply: a value someone already set is left alone unless
+`FORCE=1`, and uninstall removes the line only while it still reads `false`.
 
 One asymmetry worth knowing: the Claude adapter tops its hooks up on every run, while
 the Codex one returns early as soon as its MCP server is wired and never reaches the
