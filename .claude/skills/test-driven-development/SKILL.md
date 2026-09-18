@@ -17,6 +17,10 @@ Write a failing test before the code that makes it pass. For bug fixes, reproduc
 
 Never start with the fix. Write the reproduction test first, watch it fail (bug confirmed), implement the fix, watch it pass (fix proven), then run the full suite for regressions. A bug fix without a reproduction test can silently regress.
 
+## Seams
+
+A **seam** is the public boundary you test at: observe behavior there without reaching into internals. Name the seams under test before writing the first test. Ask the user only when the seam choice is consequential; when the shape of the interface itself is in question, Call the Skill tool with "codebase-design".
+
 ## Choosing the test level
 
 - Pure logic, no I/O → **unit test** (milliseconds; the bulk of the suite, ~80%).
@@ -32,6 +36,8 @@ If a change breaks your code and no test catches it, that's a gap in *your* test
 - **Prefer real implementations** over doubles: real > fake > stub > mock. Mock only what's slow, non-deterministic, or side-effectful (external APIs, email). Over-mocking produces tests that pass while production breaks.
 - **One behavior per test, named as a specification** — `it('throws NotFoundError for non-existent task')`, not `it('handles errors')`.
 - **Isolated and deterministic** — no ordering dependencies, no timing flake; each test owns its setup and teardown.
+- **Independent expected values** — avoid tautological tests that recompute the expected value the same way the code computes it. Derive expectations from a known literal, a worked example, or the spec.
+- **Vertical cycles** — avoid horizontal slicing (all tests, then all code), which verifies imagined behavior. Work one test and one implementation at a time; each test is a tracer bullet informed by the previous cycle.
 
 ## Browser code
 
@@ -39,7 +45,7 @@ Unit tests aren't enough for anything that runs in a browser — combine with ru
 
 ## References
 
-Load `references/testing-patterns.md` for concrete code examples: RED/GREEN walkthrough, reproduction-test example, state-vs-interaction and DAMP comparisons, Arrange-Act-Assert, naming, and the anti-pattern table.
+Load `references/testing-patterns.md` for concrete code examples: RED/GREEN walkthrough, reproduction-test example, state-vs-interaction and DAMP comparisons, independent expectations, Arrange-Act-Assert, naming, and the anti-pattern table.
 
 ## Verification
 

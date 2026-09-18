@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": 1757600000,
+  "providers": {
+    "codex": {
+      "state": "ok",
+      "source": "app-server",
+      "fetched_at": 1757600000,
+      "next_retry_at": null,
+      "error": null,
+      "age_seconds": 0,
+      "windows": [
+        {"id": "primary", "kind": "session", "label": "5 h", "minutes": 300, "used_percent": 42.0, "resets_at": 1757610000},
+        {"id": "secondary", "kind": "weekly", "label": "Week", "minutes": 10080, "used_percent": 88.0, "resets_at": 1758000000}
+      ]
+    }
+  }
+}

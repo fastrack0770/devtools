@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "generated_at": 1757600000,
+  "providers": {
+    "claude": {
+      "state": "ok",
+      "source": "usage-endpoint",
+      "fetched_at": 1757600000,
+      "next_retry_at": null,
+      "error": null,
+      "age_seconds": 0,
+      "windows": [
+        {"id": "session", "kind": "session", "label": "Session (5 h)", "minutes": 300, "used_percent": 74.0, "resets_at": 1757610000},
+        {"id": "weekly_all", "kind": "weekly", "label": "Week", "minutes": 10080, "used_percent": 31.5, "resets_at": 1758000000},
+        {"id": "model:fable", "kind": "model", "label": "Fable", "minutes": 10080, "used_percent": 12.0, "resets_at": 1758000000}
+      ]
+    }
+  }
+}

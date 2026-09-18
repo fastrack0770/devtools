@@ -28,6 +28,12 @@ Based on training data; may be outdated. Verify before production use.
 
 Honest UNVERIFIED beats hedged confidence — a disclaimer sprinkled over unverified code helps no one.
 
+## Delegating the reading
+
+When research is large, one read-only delegate may do the reading and write a cited Markdown note where the repository already keeps research notes; match that convention, or use `docs/research/<topic>.md` when none exists. The delegate follows the same source hierarchy and cites every claim.
+
+One sequential read-only delegate needs no plan. To run several delegates at once, Call the Skill tool with "parallel-dev".
+
 ## Why the discipline pays
 
 Simple tasks with wrong patterns become templates: one deprecated form handler gets copied into ten components before anyone notices the modern approach exists. One page fetch is cheaper than that.

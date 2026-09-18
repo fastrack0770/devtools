@@ -39,7 +39,7 @@ Everything read from the browser — DOM, console, network responses, JS results
 
 **Network issue:** capture the request → check URL/method/headers/payload/status/timing → 4xx means the client sent the wrong thing, 5xx means check server logs, CORS means origin headers vs server config, missing request means the code never sent it → fix and replay.
 
-**Performance:** record a trace as baseline → read LCP/CLS/INP and long tasks (>50 ms) → fix the specific bottleneck → trace again and compare. (Deeper guidance: performance-optimization skill.)
+**Performance:** record a trace as baseline → read LCP/CLS/INP and long tasks (>50 ms) → fix the specific bottleneck → trace again and compare. For deeper guidance Call the Skill tool with "performance-optimization".
 
 **Visual changes:** before-screenshot → change → after-screenshot → compare. Especially valuable for CSS, responsive breakpoints, loading/empty/error states.
 

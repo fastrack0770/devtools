@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "generated_at": 1757600000,
+  "providers": {
+    "claude": {
+      "state": "error", "source": null, "fetched_at": null,
+      "next_retry_at": null, "error": "network", "age_seconds": 0, "windows": []
+    },
+    "codex": {
+      "state": "ok", "source": "app-server", "fetched_at": 1757600000,
+      "next_retry_at": null, "error": null, "age_seconds": 0,
+      "windows": [{"id": "primary", "kind": "session", "label": "5 h", "minutes": 300, "used_percent": 42.0, "resets_at": 1757610000}]
+    }
+  }
+}

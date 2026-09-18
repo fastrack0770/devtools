@@ -1,6 +1,6 @@
 ---
 name: interview-me
-description: Extracts what the user actually wants instead of what they think they should want, via one-question-at-a-time interview until ~95% confidence. Use when an ask is underspecified ("build me X" without who/why/success), when the user invokes it ("interview me", "grill me", "stress-test my thinking"), or when you catch yourself silently filling in ambiguous requirements. Not for unambiguous self-contained asks, pure information requests, mechanical operations, or non-interactive contexts (CI, loops) — there, flag the gap as a blocker instead.
+description: Extracts what the user actually wants instead of what they think they should want, via one-question-at-a-time interview until ~95% confidence. Use when an ask is underspecified ("build me X" without who/why/success), when the user invokes it ("interview me"), or when you catch yourself silently filling in ambiguous requirements. Not for unambiguous self-contained asks, pure information requests, mechanical operations, or non-interactive contexts (CI, loops) — there, flag the gap as a blocker instead.
 ---
 
 # Interview Me
@@ -55,3 +55,5 @@ A **confirmed statement of intent** — the Step 4 restate with an explicit yes.
 ## Downstream handoffs
 
 Hand the *confirmed intent* (never the original underspecified ask) to opsx:explore when scoping is still open, or to spec-driven-development when the intent is concrete. doubt-driven-development sits at the opposite end of the timeline: it reviews decisions after they're drafted; this skill extracts intent before.
+
+When the intent is confirmed but the design still has many open branches, `Call the Skill tool with "grilling"`.

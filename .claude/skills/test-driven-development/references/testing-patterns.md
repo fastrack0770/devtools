@@ -147,3 +147,19 @@ describe('TaskService', () => {
 | Snapshot abuse | Large snapshots nobody reviews, break on any change | Use sparingly; review every snapshot change |
 | No test isolation | Tests pass individually, fail together | Each test sets up and tears down its own state |
 | Mocking everything | Tests pass while production breaks | Real > fake > stub > mock; mock only at slow/non-deterministic boundaries |
+
+## Tautological expected values
+
+```typescript
+// Bad: the expected value repeats the implementation's reduction.
+test('calculateTotal sums line items', () => {
+  const items = [{ price: 10 }, { price: 5 }];
+  const expected = items.reduce((sum, item) => sum + item.price, 0);
+  expect(calculateTotal(items)).toBe(expected);
+});
+
+// Good: the expected value is an independent, known literal.
+test('calculateTotal sums line items', () => {
+  expect(calculateTotal([{ price: 10 }, { price: 5 }])).toBe(15);
+});
+```

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+shopt -s nullglob
+
+for dir in */; do
+    name="${dir%/}"
+    [[ -e "$name.tar.gz" ]] && { echo "Пропускаю $name — архив уже есть"; continue; }
+    echo "Архивирую: $name -> $name.tar.gz"
+    tar -czf "$name.tar.gz" -- "$name"
+done
+
+echo "Готово."

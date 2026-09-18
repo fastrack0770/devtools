@@ -23,21 +23,47 @@ Every number is the **used** share of a limit, not the remainder.
   Polling interval: 60 s.
 - **Failure handling**: a rate limit or network blip keeps the last known
   numbers on screen, dimmed and marked stale in the menu, instead of blanking
-  the panel. After an HTTP 429 automatic polling pauses for as long as the
-  server's `Retry-After` header asks (capped at an hour), or 5 minutes when it
-  sends no such header; *Refresh now* still forces a request.
+  the panel. After an HTTP 429 — from either the usage or the token endpoint —
+  automatic polling pauses for as long as the server's `Retry-After` header asks
+  (capped at an hour), or 5 minutes when it sends no such header, and the menu
+  says when it will retry; *Refresh now* still forces a request.
+
+## Where the numbers come from
+
+The extension no longer talks to a vendor itself. It runs the shared usage
+runtime — `~/.local/libexec/ai-usage-control/ai-usage`, installed by
+`make install ai-usage` and pulled in automatically by
+`make install gnome-extension` — and formats the one versioned JSON document it
+prints. The Godot Shell reads that same runtime for its in-world HUD, which is
+why it lives outside this package: removing the extension must not take the
+Shell's data source away, so `make uninstall gnome-extension` leaves it in place.
+
+What that moves out of here: the vendor-specific parsing, the 60-second cache,
+the single-flight lock that keeps two clients from polling twice, and the
+rate-limit backoff. What stays here: this panel's own rendering, its menu and
+its threshold notifications. Notifications have exactly one owner — the Shell's
+HUD renders the same numbers and deliberately raises none, so a crossed
+threshold is announced once.
+
+`AI_USAGE_BIN` points the extension at a working copy during development.
+
+If the runtime is missing, the panel says so rather than failing: install it
+with `make install ai-usage`.
 
 ## No settings, by design
 
 There is no preferences window. A provider's bar appears when that CLI is
 installed and logged in, and disappears when it is not — rechecked on every
-poll, so logging in to either tool brings its bar up within a minute. Detection
-is just the presence of `~/.claude/.credentials.json` and `~/.codex/auth.json`.
+poll, so logging in to either tool brings its bar up within a minute. A CLI that
+is not set up is reported by the runtime as `unavailable`, and an unavailable
+provider gets no empty indicator.
 
 ## Requirements
 
-- GNOME Shell 42 (Ubuntu 22.04). Other versions are untested — bump
-  `shell-version` in `metadata.json` if you want to try.
+- GNOME Shell 42-50, which covers Ubuntu 22.04 through 25.10. GNOME 45
+  replaced the extension entry-point API wholesale, so the package carries one
+  entry point for each side of that break and the installer picks the matching
+  one; everything else is shared. See *Two entry points* below.
 - `python3` (standard library only, no third-party packages).
 - At least one logged-in CLI. With neither, the panel simply stays empty.
 
@@ -77,14 +103,16 @@ install before copying the new one — nothing to do by hand.
 
 ## Where the data comes from
 
-Each provider has its own helper script printing one line of JSON to stdout,
-which the extension renders. Neither helper sends anything to a model, so
+Each provider has its own helper script printing one line of JSON to stdout.
+They now live in the shared runtime, under `ai-usage/ai_usage/helpers/`, and the
+runtime normalises their two different shapes into the one document both the
+panel and the Godot Shell render. Neither helper sends anything to a model, so
 neither costs inference tokens.
 
 Neither data source is a documented public API — both vendors can change them
 at any time, and this project is unaffiliated with Anthropic and OpenAI.
 
-### Claude — `claude-usage-helper.py`
+### Claude — `ai_usage/helpers/claude-usage-helper.py`
 
 Calls the same endpoint the `/usage` command of the claude CLI uses
 (`api.anthropic.com/api/oauth/usage`), with the OAuth token from
@@ -106,7 +134,7 @@ size, so it only re-runs after a CLI update. Anything that cannot be found or
 validated falls back to the constants at the top of the helper; `config_source`
 in the JSON output says which path was taken: `cli`, `cache` or `defaults`.
 
-### Codex — `codex-usage-helper.py`
+### Codex — `ai_usage/helpers/codex-usage-helper.py`
 
 Two sources, in order.
 
@@ -145,7 +173,7 @@ well have been spent from an IDE, the web, or another machine in the meantime.
 
 Read these before installing — the Claude helper touches your credentials file.
 
-- `claude-usage-helper.py` **reads** `~/.claude/.credentials.json` and, when the
+- `ai_usage/helpers/claude-usage-helper.py` **reads** `~/.claude/.credentials.json` and, when the
   access token has expired, **writes** a refreshed token back to it (atomically,
   under a file lock, preserving every other key). Before the first write it
   saves a backup to `~/.claude/.credentials.json.bak-claude-usage`.
@@ -156,10 +184,42 @@ Read these before installing — the Claude helper touches your credentials file
   favour of the built-in defaults. The client id is only taken together with a
   token URL that passed this check, since the two are posted alongside your
   refresh token.
-- `codex-usage-helper.py` never reads or writes `~/.codex/auth.json`; it only
+- `ai_usage/helpers/codex-usage-helper.py` never reads or writes `~/.codex/auth.json`; it only
   checks that the file exists. All Codex network access happens inside
   `codex app-server`, under Codex's own credentials handling.
 - Tokens are never printed, logged or copied anywhere else.
+
+## Two entry points
+
+GNOME 45 turned the Shell's JavaScript into ES modules. Before it, the Shell
+read `extension.js` with the legacy importer and called `init()`; from it on it
+does `await import()` and constructs a default-exported class. No single file
+can satisfy both — `export` is a syntax error outside a module — so the package
+ships two:
+
+| File | Shell | Loaded as |
+| --- | --- | --- |
+| `extension.js` | 42-44 | legacy script, `init()` |
+| `extension-esm.js` | 45+ | ES module, `export default class` |
+
+`deploy/gnome-extension.sh` reads `gnome-shell --version` and installs the
+matching one *as* `extension.js`, the name the Shell looks for.
+
+Only the entry points are duplicated. Everything under `aiusagelib/` is one
+copy, written in the legacy style and loaded through `imports` by both — which
+works because an ES module can still reach the `imports` object, while a legacy
+script can never parse an ES module. The directory is not called `lib` because
+`imports.*` is a process-wide namespace shared with every other extension, and
+the first loader of a given path wins for all of them.
+
+Two things the shared code cannot paper over:
+
+- The Shell's own UI modules (`Main`, `PanelMenu`, `PopupMenu`, `MessageTray`)
+  are ES modules on 45+ and unreachable through `imports`, so each entry point
+  obtains them its own way and passes them to `aiusagelib/core.js`.
+- GNOME 46 rebuilt the notification API. `_notify()` picks its calls at runtime
+  by looking for the method that was *removed* (`Source.showNotification`),
+  which is checkable from either side; both branches are covered by the tests.
 
 ## Tests
 
@@ -168,27 +228,41 @@ gnome-extension/ai-usage@ai-usage-control/tests/run.sh
 ```
 
 Covers the formatters and both provider parsers — window selection, staleness,
-expiry and the two JSON dialects — using `gjs` with a stub for the GNOME Shell
-imports. The indicator widget itself needs a live Shell and is not covered.
+expiry and the two JSON dialects — plus the indicator's render path and its
+notifications. `St` ships only inside the Shell process, so `tests/fakeShell.js`
+evaluates `aiusagelib/indicator.js` with the `imports` object shadowed by
+stand-ins. That is also how the notification code is checked against *both*
+shell generations from one machine: the stand-in tray decides which API the
+indicator finds. Anything that needs a real Shell — the panel button actually
+appearing, the subprocess call — is still out of reach.
 
 ## Debugging
 
 ```bash
-EXT="gnome-extension/ai-usage@ai-usage-control"
+HELPERS="ai-usage/ai_usage/helpers"
 
-# Fetch the data by hand (expect a single JSON line each):
-python3 "$EXT/claude-usage-helper.py"
-python3 "$EXT/codex-usage-helper.py"
+# The document the panel actually renders (one JSON object):
+~/.local/libexec/ai-usage-control/ai-usage | python3 -m json.tool
+
+# Bypass the 60-second cache:
+~/.local/libexec/ai-usage-control/ai-usage --force | python3 -m json.tool
+
+# Fetch one vendor's raw reply by hand (expect a single JSON line each):
+python3 "$HELPERS/claude-usage-helper.py"
+python3 "$HELPERS/codex-usage-helper.py"
 
 # Codex: force the stale session-journal path instead of the app-server
-CU_CODEX_NO_APPSERVER=1 python3 "$EXT/codex-usage-helper.py"
+CU_CODEX_NO_APPSERVER=1 python3 "$HELPERS/codex-usage-helper.py"
 
 # Point either helper at a specific binary:
-CU_CLAUDE_BIN=/path/to/claude python3 "$EXT/claude-usage-helper.py"
-CU_CODEX_BIN=/path/to/codex   python3 "$EXT/codex-usage-helper.py"
+CU_CLAUDE_BIN=/path/to/claude python3 "$HELPERS/claude-usage-helper.py"
+CU_CODEX_BIN=/path/to/codex   python3 "$HELPERS/codex-usage-helper.py"
 
 # Claude: ignore the installed CLI and use the built-in endpoint constants
-CU_NO_CLI_DISCOVERY=1 python3 "$EXT/claude-usage-helper.py"
+CU_NO_CLI_DISCOVERY=1 python3 "$HELPERS/claude-usage-helper.py"
+
+# Drop the shared snapshot so the next poll refetches:
+rm ~/.cache/ai-usage-control/usage-v1.json
 
 # Force a re-scan of the claude CLI:
 rm ~/.cache/ai-usage-control/cli-meta.json

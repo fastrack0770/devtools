@@ -9,7 +9,7 @@ Design interfaces that are hard to misuse: the right thing easy, the wrong thing
 
 ## Governing ideas
 
-- **Hyrum's Law:** with enough users, every observable behavior — documented or not, including error text, ordering, and timing — becomes a de facto contract. Be intentional about what you expose; don't leak implementation details; plan deprecation at design time (see deprecation-and-migration).
+- **Hyrum's Law:** with enough users, every observable behavior — documented or not, including error text, ordering, and timing — becomes a de facto contract. Be intentional about what you expose; don't leak implementation details; plan deprecation at design time, and when a breaking change is unavoidable Call the Skill tool with "deprecation-and-migration".
 - **One-version rule:** don't force consumers to choose between versions of the same thing. Extend rather than fork; multiple live versions multiply maintenance and create diamond dependencies.
 - **Contract first:** define the typed interface before implementing. The contract is the spec; documentation lives in the types and their doc comments.
 - **Addition over modification:** evolve by adding optional fields; changing a field's type or removing one breaks consumers. If a breaking change is unavoidable, it's a migration, not an edit.

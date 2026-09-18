@@ -33,7 +33,7 @@ Environment layout: `.env.example` committed as template; real `.env` never comm
 
 ## The feedback loop
 
-CI's value with agents is the loop: on failure, feed the specific error back — lint errors get auto-fixed and committed; type errors get read and fixed at the reported location; test failures go through debugging-and-error-recovery; build errors usually mean config or dependency drift. Verify locally before pushing again.
+CI's value with agents is the loop: on failure, feed the specific error back — lint errors get auto-fixed and committed; type errors get read and fixed at the reported location; for test failures Call the Skill tool with "debugging-and-error-recovery"; build errors usually mean config or dependency drift. Verify locally before pushing again.
 
 ## Beyond the PR pipeline
 

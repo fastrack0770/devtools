@@ -1,0 +1,42 @@
+# Готового образа agentmemory в реестрах нет — собираем минимальный.
+# Node 24 = версия, под которой пакет уже работал на хосте (v24.20.0).
+FROM node:24-slim
+
+# Значения приходят из build.args в docker-compose.yml, а туда — из
+# ~/llm/.env, который генерирует deploy/agentmemory.sh. Дефолтов нет
+# намеренно: сборка «наугад» дала бы образ с чужим HOME и чужим UID,
+# который тихо не пишет в bind-mount.
+ARG AGENTMEMORY_VERSION
+ARG HOST_UID
+ARG HOST_GID
+ARG HOST_HOME
+
+# git нужен снапшотам памяти: mem::snapshot-create коммитит
+# ~/.agentmemory/snapshots как git-репозиторий. Без бинарника
+# SNAPSHOT_ENABLED=true молча падает в "spawn git ENOENT".
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl git \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g "@agentmemory/agentmemory@${AGENTMEMORY_VERSION}" \
+ && npm cache clean --force
+
+# HOME контейнера совпадает с хостовым: в ~/.agentmemory лежат .env,
+# preferences.json и snapshots, которые монтируются as-is, а пути внутри
+# состояния движка абсолютные. Каталог создаём заранее и отдаём хостовому
+# UID — иначе docker создаст его root:root, и процесс под нехостовым uid
+# не сможет писать рядом с bind-mount'ами (pid-файлы, worker.out).
+#
+# Проверка на пустые ARG стоит именно здесь: рекурсивный chown по пустому
+# пути — не та ошибка, которую хочется отлаживать по симптомам.
+RUN test -n "${HOST_HOME}" && test -n "${HOST_UID}" && test -n "${HOST_GID}" \
+ && mkdir -p "${HOST_HOME}/llm" \
+ && chown -R "${HOST_UID}:${HOST_GID}" "${HOST_HOME}"
+
+ENV HOME=${HOST_HOME} \
+    NODE_ENV=production
+
+USER ${HOST_UID}:${HOST_GID}
+WORKDIR ${HOST_HOME}/llm
+
+ENTRYPOINT ["agentmemory"]

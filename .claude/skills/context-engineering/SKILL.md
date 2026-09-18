@@ -15,17 +15,22 @@ Feed the agent the right information at the right time — and no more. Modern m
 4. **Prefer artifacts over prose.** A failing test, an HTML mockup, a code example, or a scoring rubric constrains behavior better than paragraphs describing the same intent. Test suites make excellent specs.
 5. **Prune.** Stale instructions are worse than missing ones — the model can rediscover missing facts but will obey stale ones. When a convention changes, delete the old guidance. Audit any rules file that has grown past a screen.
 6. **Don't paper over gaps with context.** When loaded sources conflict on a decision that matters, or a requirement is simply absent, surface it — more context can't substitute for a product decision.
+7. **Balance the two loads.** Context load is the always-loaded material paid on every turn; cognitive load is what the human must remember. Keep both lean, and spend cognitive load where human judgement matters.
+8. **Make pointers fire.** A pointer's wording decides whether material is reached: front-load the leading word and use one trigger per distinct branch.
 
 ## CLAUDE.md
 
-Write it for a competent new teammate: only what they'd need to be *told* rather than what they'd discover. What the repo is for, non-obvious commands, unusual conventions and their reasons, hard boundaries (never commit secrets; ask before schema changes). Link to skills or docs for depth. If a line could be cheaply and reliably inferred from the codebase, delete it; keep what's costly to rediscover (build commands, cross-repo coupling).
+Write it for a competent new teammate: only what they'd need to be *told* rather than what they'd discover. What the repo is for, non-obvious commands, unusual conventions and their reasons, hard boundaries (never commit secrets; ask before schema changes). Link to skills or docs for depth. If a line could be cheaply and reliably inferred from the codebase, delete it; keep what's costly to rediscover (build commands, cross-repo coupling). When editing a skill, CLAUDE.md, or any doc an agent reads, Call the Skill tool with "writing-for-agents".
 
 ## Per-task context
 
 - Read files before editing them; find one existing example of the pattern to follow.
 - Load the relevant slice of a spec, not the whole document.
 - Feed back the specific failing error, not the full log.
-- Start a fresh session when switching to unrelated work; summarize progress before compaction.
+
+## Session boundaries
+
+At a phase boundary, decide in this order: continue, clear, handoff, subagent, compact. Load `references/phase-boundaries.md` when deciding what to do at a phase boundary.
 
 ## Trust boundaries
 

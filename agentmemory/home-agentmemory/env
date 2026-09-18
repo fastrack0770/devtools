@@ -1,0 +1,36 @@
+# Конфигурация agentmemory (~/.agentmemory/.env).
+#
+# Установщик кладёт этот файл ТОЛЬКО если его ещё нет, режимом 0600, и
+# никогда не перезаписывает: здесь живут ваши правки, а на других машинах
+# могут жить и настоящие ключи. Обновлять — руками.
+#
+# @LLM_MODEL@ подставляется один раз, при создании, из
+# agentmemory/versions.env.
+
+# Локальный OpenAI-compatible API llama.cpp.
+# Фиктивный ключ нужен Agentmemory для активации OpenAI-compatible LLM-провайдера.
+OPENAI_API_KEY=local-llamacpp
+
+# llama-server слушает только loopback-интерфейс.
+OPENAI_BASE_URL=http://127.0.0.1:8080/v1
+
+# Должно совпадать с --alias у llama-server (иначе /v1/models отдаёт другое
+# имя, и запрос уходит в никуда). Контейнер agentmemory это значение всё
+# равно переопределяет через compose; здесь оно для хостового CLI —
+# `agentmemory status`, `doctor`.
+OPENAI_MODEL=@LLM_MODEL@
+
+# Включает LLM-компрессию / консолидацию памяти.
+AGENTMEMORY_AUTO_COMPRESS=true
+
+# Не используем OpenAI embeddings: остаётся локальный BM25-поиск.
+EMBEDDING_PROVIDER=none
+AGENTMEMORY_INJECT_CONTEXT=true
+
+# Используем граффы
+GRAPH_EXTRACTION_ENABLED=true
+CONSOLIDATION_ENABLED=true
+
+# Git-версионированные снапшоты памяти (~/.agentmemory/snapshots), интервал SNAPSHOT_INTERVAL сек (дефолт 3600)
+SNAPSHOT_ENABLED=true
+OPENAI_TIMEOUT_MS=300000

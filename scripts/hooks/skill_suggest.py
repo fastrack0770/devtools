@@ -7,14 +7,15 @@ Runs on EVERY user message and checks whether a methodology skill fits it
 candidates; otherwise it stays silent (no noise).
 
 Complements the PostToolUse hook opsx_skill_routing.py (which only covers
-launching openspec skills). The topic map mirrors the "Skill routing" section
-in CLAUDE.md.
+launching openspec skills). The topic map mirrors `using-agent-skills` and is
+checked by `scripts/check_skills.py`.
 
 Input: JSON on stdin (UserPromptSubmit -> prompt field). Output: JSON with
 hookSpecificOutput.additionalContext, or nothing.
 """
 
 import json
+import re
 import sys
 
 # (lowercase keywords, topic, candidate skills)
@@ -31,7 +32,7 @@ RULES = [
     (("api", "эндпоинт", "endpoint", "контракт", "rest", "graphql", "схема данных", "интерфейс модул"),
      "API/contract/interface",
      ["api-and-interface-design"]),
-    (("ui", "интерфейс", "кнопк", "форма", "страниц", "компонент", "frontend", "верстк", "css", "карточк"),
+    (("ui", "ui-", "интерфейс", "кнопк", "форма", "страниц", "компонент", "frontend", "верстк", "css", "карточк"),
      "UI/frontend",
      ["frontend-ui-engineering"]),
     (("безопасн", "security", "auth", "пароль", "токен", "уязвим", "инъекц", "untrusted", "ввод польз"),
@@ -55,7 +56,7 @@ RULES = [
     (("логир", "метрик", "observability", "мониторинг", "trace", "телеметри"),
      "observability",
      ["observability-and-instrumentation"]),
-    (("идея", "обдумать", "brainstorm", "не уверен", "stress-test", "размыт", "набросать"),
+    (("идея", "обдумать", "brainstorm", "не уверен", "размыт", "набросать"),
      "raw idea/clarification",
      ["opsx:explore", "interview-me"]),
     (("спецификац", "spec", "новая фича", "с нуля", "новый проект", "требовани"),
@@ -70,14 +71,38 @@ RULES = [
     (("докум", "adr", "readme", "архитектурн решени", "document"),
      "documentation/decisions",
      ["documentation-and-adrs"]),
+    (("grill", "гриль", "стресс-тест", "прожарь", "допроси"),
+     "design stress-test", ["grilling"]),
+    (("прототип", "prototype", "набросок", "throwaway", "poc"),
+     "throwaway prototype", ["prototype"]),
+    (("конфликт", "conflict", "rebase", "merge"),
+     "merge conflict", ["resolving-merge-conflicts"]),
+    (("модул", "seam", "интерфейс модул", "deep module", "архитектур", "deepen"),
+     "codebase/module design", ["codebase-design"]),
+    (("глоссар", "glossary", "термин", "context.md", "ubiquitous"),
+     "domain vocabulary", ["domain-modeling"]),
+    (("skill.md", "claude.md", "agents.md", "напиши скилл", "write a skill"),
+     "agent-facing writing", ["writing-for-agents"]),
+    (("credentials", "секрет", "secrets", "provision", "настрой ci"),
+     "human-only setup", ["wizard"]),
 ]
+
+
+WORD_KEYS = {"ui", "api", "poc", "rest", "css", "adr", "test", "bug", "error", "merge"}
+
+
+def key_matches(key: str, prompt: str) -> bool:
+    """Use word boundaries for short bare tokens; stems and phrases stay substring matches."""
+    if key in WORD_KEYS:
+        return re.search(rf"(?<!\w){re.escape(key)}(?!\w)", prompt) is not None
+    return key in prompt
 
 
 def suggest(prompt: str):
     p = prompt.lower()
     topics, skills = [], []
     for keys, topic, sk in RULES:
-        if any(k in p for k in keys):
+        if any(key_matches(k, p) for k in keys):
             topics.append(topic)
             for s in sk:
                 if s not in skills:

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "generated_at": 1757600000,
+  "providers": {
+    "codex": {
+      "state": "stale", "source": "rollout", "fetched_at": 1757500000,
+      "next_retry_at": null, "error": null, "age_seconds": 100000,
+      "windows": [{"id": "primary", "kind": "session", "label": "5 h", "minutes": 300, "used_percent": null, "resets_at": 1757510000}]
+    }
+  }
+}

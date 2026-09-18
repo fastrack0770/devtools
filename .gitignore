@@ -9,3 +9,4 @@ __pycache__
 .credentials.json
 state.json
 fake_percent
+openspec

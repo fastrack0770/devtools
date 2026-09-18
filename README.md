@@ -1,79 +1,124 @@
 # devtools
 
-Three independent toolkits:
+Four independent toolkits:
 
 - **[Bash scripts](#bash-scripts)** — small git/workspace helpers for your terminal.
-- **[Claude Code base config](#claude-code-base-config)** — reusable Claude Code setup for any project.
+- **[Coding-agent base config](#coding-agent-base-config)** — reusable Claude Code + Codex setup for any project.
 - **[GNOME Shell extension](#gnome-shell-extension)** — Claude Code and Codex usage indicators in the Ubuntu top panel.
+- **[Agent memory stack](#agent-memory-stack)** — local persistent memory for Claude Code and Codex, in Docker.
 
-Each ships its own deploy script in `deploy/`; the `Makefile` wraps all three.
+Each ships its own deploy script in `deploy/`; the `Makefile` wraps all four.
 
 ## Install
 
 ```sh
-make                                                # list the components
-make install bash-scripts                           # 1. console utilities
-make install claude-config PROJECT=/path/to/project # 2. Claude Code configuration
-make install gnome-extension                        # 3. Ubuntu extension
+make                                            # list the components
+make install bash-scripts                       # 1. console utilities
+make install ai-config PROJECT=/path/to/project # 2. Claude Code + Codex configuration
+make install ai-usage                           # 3. shared usage runtime
+make install gnome-extension                    # 4. Ubuntu extension (installs 3 first)
+make install agentmemory                        # 5. local memory stack
 ```
 
 Components combine: `make install bash-scripts gnome-extension`. Bare `make install`
-takes all three, but skips the Claude Code config unless `PROJECT` is set
+takes the first three, but skips the agent config unless `PROJECT` is set
 (`make install PROJECT=/path/to/project`). Every component is idempotent.
 
 `make uninstall bash-scripts` and `make uninstall gnome-extension` reverse the first
-and third; the Claude Code config has no uninstaller, since by then its files are part
-of the target project.
+and fourth; the agent config has no uninstaller, since by then its files are part
+of the target project. Removing the extension deliberately leaves the shared usage
+runtime in place — the Godot Shell reads it too — so `make uninstall ai-usage` is a
+separate, explicit step.
+
+The memory stack is asked for by name and never comes along with a bare `make install`
+or `make uninstall`: it wants an NVIDIA GPU, downloads gigabytes and rewires both
+agents. It is also the only component with a running state of its own, so it adds two
+verbs — `make start` and `make stop`.
 
 ---
 
-# Claude Code base config
+# Coding-agent base config
 
-Reusable, project-agnostic Claude Code setup in `.claude/` and `scripts/hooks/`.
-Drop it into any project to get the same skills, slash commands and skill-routing hooks.
+Reusable, project-agnostic agent setup in `.claude/`, `.codex/` and `scripts/hooks/`.
+Drop it into any project to get the same skills, slash commands and skill-routing hooks
+— for Claude Code and for Codex.
+
+> Renamed from `claude-config` once it started carrying the Codex side as well.
+> `make install claude-config PROJECT=…` still works and prints a notice, and a
+> `CLAUDE.md` written by the old script is migrated to the new marker on the next run.
 
 Contents:
-- `.claude/skills/` — methodology skills (TDD, code review, planning, security, openspec, …), including each skill's own `scripts/`, `references/` and templates. Taken from https://github.com/addyosmani/agent-skills
+- `.claude/skill-manifest.json` — the release boundary: promoted skills deploy; the `retro` in-progress bucket stays here for piloting.
+- `.claude/skills/` — methodology skills grouped by the router: main-flow `grilling`; on-ramps `prototype`, `resolving-merge-conflicts`, and `parallel-dev`; codebase-health `codebase-design`; vocabulary `domain-modeling` and `writing-for-agents`; production helper `wizard`; and human-invoked `handoff`, `retro`, and `to-questionnaire`. Each skill keeps its nested `scripts/`, `references/`, and templates. Adapted from both https://github.com/addyosmani/agent-skills and https://github.com/mattpocock/skills.
 - `.claude/commands/opsx/` — openspec slash commands (`/opsx:propose|apply|sync|archive|explore`).
+- `.claude/opsx/` — ideation lenses and the refinement rubric that both explore skills point at.
+- `.codex/skills/` — the openspec workflow for Codex; at deploy time `deploy/ai-config.sh` adds the promoted model-invoked methodology skills next to it (Codex parity), leaving out `parallel-dev` and the human-invoked skills. The openspec copies keep their Codex-specific tools (`update_plan` instead of `TodoWrite`, plain questions instead of `AskUserQuestion`, sync inline instead of through a subagent).
 - `.claude/settings.json` — wires the two hooks below (uses `CLAUDE_PROJECT_DIR`, so it's portable).
 - `scripts/hooks/skill_suggest.py` — `UserPromptSubmit` hook; suggests relevant skills by keyword (RU/EN).
 - `scripts/hooks/opsx_skill_routing.py` — `PostToolUse` hook; reminds about phase skills when an openspec skill runs.
-- `CLAUDE.md` — base working rules (act on the skill-routing hooks; don't spawn agents outside `parallel-dev`).
+- `CLAUDE.md` — base working rules (act on the skill-routing hooks; don't spawn agents outside `parallel-dev`). The single source of truth for every agent: rule changes are made here.
+- `.codex/AGENTS.md` → deployed as `AGENTS.md` — the file Codex reads. It only points at `CLAUDE.md` (plus one note that the hook machinery does not fire in a Codex session), so the rules never exist in two versions.
+- `docs/adr/` — short records for durable configuration and routing decisions.
 
 `.claude/settings.local.json` is machine/project-specific (permissions) — not part of the portable base.
 
-The `openspec-*` skills and `.claude/commands/opsx/` **are committed here** (they are tuned
-for this repo's skill set, not stock `openspec init` output) and no longer gitignored.
-Re-running `openspec init` in this repo therefore shows up as modified tracked files —
-diff before keeping it, or the local tuning is silently reverted.
+The `openspec-*` skills (both trees) and `.claude/commands/opsx/` **are committed here**
+(they are tuned for this repo's skill set, not stock `openspec init` output) and no longer
+gitignored. Re-running `openspec init` in this repo therefore shows up as modified tracked
+files — diff before keeping it, or the local tuning is silently reverted. The local tuning
+sits in `<!-- BEGIN custom addition -->` blocks so it can be restored after a regeneration.
 
 ## Deploy
 
 ```sh
-deploy/claude-config.sh <project-dir>
+deploy/ai-config.sh <project-dir>
 ```
 
-Copies `.claude/skills` (with each skill's nested `scripts/`, `references/` and
-templates), `.claude/commands` (the `opsx` slash commands), `.claude/settings.json`,
-`scripts/hooks/*.py` and `CLAUDE.md` into `<project-dir>`. Executable bits on skill
-scripts are restored after the copy and any `__pycache__`/`*.pyc` is stripped. If the
-project already has a `.claude/settings.json`, it is left untouched — merge the `hooks`
-block manually. Running `openspec init` in the target project will regenerate the
-`opsx` commands if you need a newer version.
+Copies promoted `.claude/skills` (with each skill's nested `scripts/`, `references/`
+and templates), `.claude/commands` (the `opsx` slash commands), `.claude/opsx`,
+the Codex-parity skill set, `.claude/settings.json`, `scripts/hooks/*.py`, `CLAUDE.md` and
+`AGENTS.md` into `<project-dir>`. Executable bits on skill scripts are restored after the
+copy and any `__pycache__`/`*.pyc` is stripped. If the project already has a
+`.claude/settings.json`, it is left untouched — merge the `hooks` block manually. Running
+`openspec init` in the target project will regenerate the `opsx` commands if you need a
+newer version.
+
+Codex never sees `CLAUDE.md`, so it gets `AGENTS.md` — a pointer to `CLAUDE.md`, not a
+copy of it. The skill-routing hooks stay Claude-only (Codex has no equivalent wired here);
+`AGENTS.md` says as much, so a Codex session picks its skills itself.
+
+```sh
+deploy/ai-config.sh --global        # or: make install ai-config GLOBAL=1
+```
+
+Installs the same two skill sets into `~/.claude/skills` and `~/.codex/skills` (honouring
+`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), so both agents have them in every project, and makes
+the skill-routing hooks global too: the scripts go to `~/.claude/hooks/devtools/` and their
+wiring is merged into the user-level `settings.json` (other keys and hooks untouched; an
+invalid `settings.json` is left alone). The global hook stays silent in a project whose own
+`.claude/settings.json` wires the same script, so nothing fires twice. The rules files stay
+per-project.
+
+Two caveats: a personal Claude skill shadows a project skill of the same name, so re-run
+`--global` after updating skills or a stale copy wins; and the few skills that point at
+project paths (`.claude/skills/<other>/…`, `.claude/opsx/`) only resolve those in a
+deployed project.
 
 **Re-run it to pull skill updates into a project** — that is the intended update path,
 so the deploy is idempotent. In `CLAUDE.md` the base rules live in a managed block:
 
 ```markdown
-<!-- BEGIN devtools base rules — managed by deploy/claude-config.sh -->
+<!-- BEGIN devtools base rules — managed by deploy/ai-config.sh -->
 …working rules…
 <!-- END devtools base rules -->
 ```
 
-Re-runs replace that block in place; anything you wrote outside it is left alone. Edits
-*inside* the block are overwritten, so keep project-specific rules below the `END`
-marker. Projects deployed before the markers existed are migrated on the next run —
-the unmarked copies stacked at the top are collapsed into one block.
+`AGENTS.md` works the same way, with its own `devtools codex rules` markers. Re-runs
+replace the block in place; anything you wrote outside it is left alone. Edits *inside*
+the block are overwritten, so keep project-specific rules below the `END` marker. Older
+layouts are migrated on the next run — the pre-rename
+`managed by deploy/claude-config.sh` opening line is rewritten, and unmarked copies
+stacked at the top are collapsed into one block.
 
 ---
 
@@ -111,6 +156,52 @@ Strips the `PATH` block back out of the same rc file, backing it up to
 
 ---
 
+# Shared usage runtime
+
+`ai-usage/` — the one source of Claude Code and Codex usage figures on this machine.
+Two clients read it: the GNOME Shell extension below, and the Godot Shell's in-world
+HUD, which needs the same numbers when the system panel is hidden behind a fullscreen
+world.
+
+It installs to a stable user-level path, deliberately outside the extension's own
+directory: a UUID and an extension's internal layout are not an interface another
+application can build on, and removing the extension must not take the Shell's data
+source with it.
+
+```sh
+make install ai-usage                 # or: deploy/ai-usage.sh
+~/.local/libexec/ai-usage-control/ai-usage        # prints one JSON document
+~/.local/libexec/ai-usage-control/ai-usage --force  # skip the freshness window
+```
+
+- **One versioned contract.** stdout carries exactly one schema-v1 JSON document —
+  diagnostics go to stderr — with a `providers` map in which each provider carries its
+  own state (`ok`, `stale`, `unavailable`, `error`), source, and ordered limit windows.
+  A partial success is an ordinary valid answer: one provider failing never blanks the
+  other. Both renderers format that same document; neither parses a vendor's reply.
+- **One fetch per minute, shared.** A reading younger than 60 seconds is served from
+  `~/.cache/ai-usage-control` without an external request, and a file lock merges
+  concurrent callers into a single upstream fetch. Two clients polling the same minute
+  therefore cost one request per provider, not two.
+- **Failures degrade, they do not blank.** The last good reading is kept separately from
+  the last failure, so a provider that fails after succeeding keeps its previous windows,
+  marked stale and aged. A rate limit's `Retry-After` is stored as an absolute time and
+  honoured across processes, capped at an hour, defaulting to five minutes.
+- **No credentials leave the helpers.** The document holds display data only — never an
+  access token, refresh token, API key or the contents of a credential file. The Godot
+  Shell is given no credentials at all. `ai-usage/tests/test_security.py` plants marker
+  tokens in helper replies and fails if one reaches stdout, stderr or the cache.
+- **Overrides for development:** `AI_USAGE_BIN` (the executable a client calls),
+  `AI_USAGE_PREFIX` (where it installs), `AI_USAGE_CACHE_DIR`, `AI_USAGE_HELPER_DIR`.
+
+Tests: `cd ai-usage && python3 -m unittest discover -s tests -t .` — no third-party
+packages needed.
+
+If the runtime is not installed, both clients degrade rather than fail: the panel says
+so and the Shell shows usage as unavailable and carries on.
+
+---
+
 # GNOME Shell extension
 
 `gnome-extension/ai-usage@ai-usage-control` — top-panel indicators showing how much of
@@ -122,9 +213,12 @@ Supports **Claude Code** and **Codex**. There is no settings UI: a bar appears w
 CLI is logged in and disappears when it is not, rechecked every minute.
 
 Requires GNOME Shell 42 (Ubuntu 22.04), `python3` and at least one logged-in CLI. The
-Claude helper reads (and, when the token expires, refreshes) `~/.claude/.credentials.json`;
-the Codex helper never touches `~/.codex/auth.json` — it asks `codex app-server` instead,
-falling back to a dimmed, explicitly stale reading from the session journal. See
+numbers come from the shared usage runtime above, which `make install gnome-extension`
+installs first; the extension itself neither talks to a vendor nor holds a credential.
+Inside that runtime the Claude helper reads (and, when the token expires, refreshes)
+`~/.claude/.credentials.json`; the Codex helper never touches `~/.codex/auth.json` — it
+asks `codex app-server` instead, falling back to a dimmed, explicitly stale reading from
+the session journal. See
 [gnome-extension/README.md](gnome-extension/README.md) for the data sources, the security
 notes, the tests and debugging commands.
 
@@ -140,3 +234,107 @@ deploy/gnome-extension.sh
 Copies the extension into `~/.local/share/gnome-shell/extensions/` and enables it.
 **Log out and log back in** afterwards — on Wayland GNOME Shell cannot pick up a new
 extension in place. Remove it with `make uninstall gnome-extension`.
+
+---
+
+# Agent memory stack
+
+`agentmemory/` — persistent memory for Claude Code and Codex, served locally. Hooks in
+both agents capture what a session does, a local LLM compresses it, and the next session
+starts with the relevant parts already in context. Nothing leaves the machine.
+
+Three containers, ~8 GB of RAM between them, all on loopback:
+
+| Service | Image | What it does |
+|---|---|---|
+| `llama` | `ghcr.io/ggml-org/llama.cpp:server-cuda` | Qwen3-4B on the GPU, OpenAI-compatible API on `:8080` |
+| `iii-engine` | `iiidev/iii` | the store: REST `:3111`, streams `:3112`, worker socket `:49134` |
+| `agentmemory` | built here from `@agentmemory/agentmemory` | the memory worker, and the viewer on `:3113` |
+
+Requires Docker with the **NVIDIA container runtime** (`nvidia-container-toolkit`),
+Node and npm. Without a GPU the install stops in preflight rather than falling back to
+CPU behind your back.
+
+## Deploy
+
+```sh
+make install agentmemory     # lay it down, build, start, wire both agents
+make start                   # start an existing install and wire the agents
+make stop                    # stop it and unwire them — nothing is deleted
+make uninstall agentmemory   # remove it all, except the memory itself
+```
+
+Every mode repairs only what is missing, which is the normal way to use this: on a
+machine where the stack already runs but, say, the Codex hooks were never installed,
+`make install agentmemory` installs those hooks and leaves everything else alone.
+
+After wiring, **start `codex` (the TUI) once** and choose "Trust all and continue" at the
+"Hooks need review" prompt — Codex will not run hooks it has not been shown, and
+`codex exec` never shows that prompt. Claude Code needs only a restart.
+
+## What goes where
+
+| Path | Owner | On uninstall |
+|---|---|---|
+| `~/llm/docker-compose.yml`, `Dockerfile.agentmemory`, `iii-config.docker.yaml` | this repo (`agentmemory/llm/`) | removed |
+| `~/llm/.env` | generated — machine facts + `agentmemory/versions.env` | removed |
+| `~/llm/data/llama-cache` | downloaded weights, ~2.5 GB | removed (`KEEP_MODEL=1` keeps them) |
+| `~/llm/data/state_store.db`, `stream_store` | **the memory** | **kept** |
+| `~/.agentmemory/.env`, `preferences.json`, `snapshots/`, `backups/` | yours — created only if absent, never rewritten | **kept** |
+| anything else in `~/llm` | not ours | untouched |
+
+So `make uninstall agentmemory` followed by `make install agentmemory` lands back on the
+memory you already had. The reasoning is in
+[docs/adr/0005](docs/adr/0005-agentmemory-file-ownership.md).
+
+Edit a repo-owned file in place and the next install prints the diff and stops, rather
+than migrating a stack that was working; `FORCE=1` replaces it, keeping a backup. Other
+knobs: `WAIT=0` (do not wait for health), `WAIT_TIMEOUT=N` (default 900 — a first run
+downloads a CUDA image and 2.5 GB of weights), `PURGE_IMAGES=1` (uninstall also drops the
+pulled images).
+
+## Versions
+
+`agentmemory/versions.env` is the single source: the npm package version is installed
+both into the container and globally on the host — the host copy is where the hook
+scripts the agents point at actually live, so the two must match — and the model name
+lands in llama's `--alias`, the container's `OPENAI_MODEL` and `~/.agentmemory/.env`
+alike. The engine version is pinned because the memory state on disk is written in its
+format; changing it over accumulated memory is a migration, not an upgrade.
+
+## Wiring
+
+`agentmemory connect` does the installing. Three gaps it leaves are handled by
+`agentmemory/agent-wiring.py`: the keys in `~/.claude/settings.json` the CLI never
+writes, the context-injection switch the Codex hooks never receive, and removal, for
+which it offers only the destructive `agentmemory remove`. All of them operate on
+agentmemory's own entries and leave every foreign hook, MCP server and env key in those
+files alone.
+
+Two keys go into `~/.claude/settings.json`: `env.AGENTMEMORY_INJECT_CONTEXT="true"`, which
+turns context injection on, and `autoMemoryEnabled: false`, which turns Claude Code's own
+auto-memory off — left on, it writes and injects a second set of notes beside agentmemory's,
+neither aware of the other. A key that already carries somebody else's value is reported and
+left alone; `FORCE=1` overrules it. Uninstall removes `autoMemoryEnabled` only while it still
+reads `false`.
+
+Codex has no such settings key, and its hook entries have no `env` field, while the hook
+scripts read `AGENTMEMORY_INJECT_CONTEXT` from their own process environment only — not
+from `~/.agentmemory/.env`. Left as the CLI writes them, the Codex hooks capture a session
+but start the next one with nothing in context, which looks exactly like "Codex ignores
+agentmemory". So the installer prefixes every agentmemory command in `~/.codex/hooks.json`
+with `env AGENTMEMORY_INJECT_CONTEXT=true`, on every run, because a vendor re-install
+writes the bare commands back. Codex trusts a hook by the hash of its definition, so this
+edit, like any other change to that file, brings the "Hooks need review" prompt back once.
+
+Codex keeps a memory of its own too — the `memories` feature, notes on disk under
+`~/.codex/`. It is off by default today, but the installer writes `memories = false` under
+`[features]` in `~/.codex/config.toml` so the choice does not hang on a vendor default. The
+same rules as for `autoMemoryEnabled` apply: a value someone already set is left alone unless
+`FORCE=1`, and uninstall removes the line only while it still reads `false`.
+
+One asymmetry worth knowing: the Claude adapter tops its hooks up on every run, while
+the Codex one returns early as soon as its MCP server is wired and never reaches the
+hook installer — so missing Codex hooks can only be installed with `--force`, which also
+rewrites the `[mcp_servers.agentmemory]` block in `config.toml`. The installer backs that
+file up before letting it happen.
