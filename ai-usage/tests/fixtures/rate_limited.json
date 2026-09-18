@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "generated_at": 1757600000,
+  "providers": {
+    "claude": {
+      "state": "stale", "source": "usage-endpoint", "fetched_at": 1757590000,
+      "next_retry_at": 1757600900, "error": "usage_http_429", "age_seconds": 10000,
+      "windows": [{"id": "session", "kind": "session", "label": "Session (5 h)", "minutes": 300, "used_percent": 74.0, "resets_at": 1757610000}]
+    }
+  }
+}

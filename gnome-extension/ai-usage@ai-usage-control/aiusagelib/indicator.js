@@ -3,13 +3,18 @@
  * Everything provider-independent lives here — the bar, the colours, the
  * countdown, the threshold notifications and their persisted state, the
  * error handling and the staleness dimming. A provider (aiusagelib/claude.js,
- * aiusagelib/codex.js) only says which helper to run and how to turn its JSON
- * into the render model below:
+ * aiusagelib/codex.js) is now only an id and a title: the controller fetches
+ * one shared document and hands this class its own entry, which
+ * aiusagelib/model.js turns into the render model below:
  *
  *   { percent, resetsAt, stale, suffix, rows, note }
  *
  * `percent` null means "no trustworthy number" and renders as an em dash;
  * `resetsAt` is Unix seconds; `stale` dims the whole indicator.
+ *
+ * Threshold notifications stay here and only here. The Godot Shell renders the
+ * same numbers and deliberately raises none, so a crossing is announced once
+ * (design.md D8).
  */
 'use strict';
 
@@ -18,9 +23,10 @@
  * imports.searchPath before pulling this file in. The shell's own UI
  * modules are not: GNOME 45 turned them into ES modules, which the legacy
  * importer cannot read, so they arrive through getUsageIndicatorClass(). */
-const { St, GLib, Gio, GObject, Clutter } = imports.gi;
+const { St, GLib, GObject, Clutter } = imports.gi;
 const Format = imports.aiusagelib.format;
 const Errors = imports.aiusagelib.errors;
+const Model = imports.aiusagelib.model;
 
 const TICK_SECONDS = 20; // countdown label refresh between polls
 const TRACK_WIDTH = 70;
@@ -38,10 +44,6 @@ function fillClassFor(percent) {
     return 'cu-fill cu-fill-blue';
 }
 
-function now() {
-    return GLib.get_real_time() / 1000000;
-}
-
 /* Registering a GType twice throws, so the class is built on first use and
  * cached: enable/disable cycles reuse it. `shell` carries the four UI
  * modules the entry point imported in whichever way its generation allows —
@@ -56,10 +58,10 @@ var getUsageIndicatorClass = function (shell) {
 
     IndicatorClass = GObject.registerClass(
     class UsageIndicator extends PanelMenu.Button {
-        _init(provider, extensionPath) {
+        _init(provider, onForceRefresh) {
             super._init(0.5, '%s Usage'.format(provider.title));
             this._provider = provider;
-            this._extensionPath = extensionPath;
+            this._onForceRefresh = onForceRefresh || (() => {});
             this._statePath = GLib.build_filenamev(
                 [STATE_DIR, 'state-%s.json'.format(provider.id)]);
 
@@ -92,14 +94,12 @@ var getUsageIndicatorClass = function (shell) {
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(this._updatedItem);
             const refreshItem = new PopupMenu.PopupMenuItem('Refresh now');
-            refreshItem.connect('activate', () => this.refresh(true));
+            refreshItem.connect('activate', () => this._onForceRefresh());
             this.menu.addMenuItem(refreshItem);
 
             this._notifyState = this._loadState();
             this._model = null;
-            this._backoffUntil = 0;
             this._destroyed = false;
-            this._generation = 0;
 
             // keep the countdown fresh between polls
             this._tickId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, TICK_SECONDS, () => {
@@ -109,64 +109,37 @@ var getUsageIndicatorClass = function (shell) {
             });
         }
 
-        /* `force` comes from the menu item and ignores the rate-limit backoff. */
-        refresh(force = false) {
-            if (!force && now() < this._backoffUntil)
+        /* One provider's entry from the shared document (design.md D2). A failed
+         * or rate-limited provider still arrives here — the runtime keeps its
+         * last good windows and marks them stale — so a blip never blanks a
+         * working panel. */
+        update(entry) {
+            if (this._destroyed)
                 return;
 
-            /* Replies are applied in completion order, not request order, so a
-             * slow poll finishing after a quick "Refresh now" would overwrite
-             * the fresher numbers — or, if it failed, mark them stale and start
-             * a backoff. Only the newest request may touch the widget. */
-            const generation = ++this._generation;
-
-            let proc;
-            try {
-                proc = Gio.Subprocess.new(
-                    ['python3', GLib.build_filenamev([this._extensionPath, this._provider.helper])],
-                    Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
-            } catch (e) {
-                this._showError('helper');
+            const model = Model.render(entry);
+            if (!model) {
+                this.showError(entry.error || 'parse', entry.next_retry_at);
                 return;
             }
-            proc.communicate_utf8_async(null, null, (p, res) => {
-                /* Finish the operation even when the answer is about to be
-                 * thrown away — an async call left unfinished holds its pipes
-                 * and its GTask open. */
-                let stdout;
-                try {
-                    [, stdout] = p.communicate_utf8_finish(res);
-                } catch (e) {
-                    if (!this._destroyed && generation === this._generation)
-                        this._showError('helper');
-                    return;
-                }
-                if (this._destroyed || generation !== this._generation)
-                    return;
-                try {
-                    const data = JSON.parse(stdout);
-                    if (!data.ok) {
-                        this._showError(data.error, data.retry_after);
-                        return;
-                    }
-                    const model = this._provider.parse(data);
-                    if (!model) {
-                        this._showError('parse');
-                        return;
-                    }
-                    this._backoffUntil = 0;
-                    this._model = model;
-                    this._render();
-                    this._updatedItem.label.text = model.note
-                        ? 'Updated: %s (%s)'.format(
-                            GLib.DateTime.new_now_local().format('%H:%M:%S'), model.note)
-                        : 'Updated: %s'.format(GLib.DateTime.new_now_local().format('%H:%M:%S'));
-                    if (model.percent !== null && !model.stale)
-                        this._maybeNotify(model.percent, model.resetsAt);
-                } catch (e) {
-                    this._showError('parse');
-                }
-            });
+
+            this._model = model;
+            this._render();
+
+            const stamp = GLib.DateTime.new_now_local().format('%H:%M:%S');
+            if (entry.state === 'stale' && entry.next_retry_at) {
+                this._updatedItem.label.text = 'Stale — %s, retry at %s'.format(
+                    Errors.errorMessage(entry.error), Format.formatReset(entry.next_retry_at));
+            } else if (model.note) {
+                this._updatedItem.label.text = 'Updated: %s (%s)'.format(stamp, model.note);
+            } else {
+                this._updatedItem.label.text = 'Updated: %s'.format(stamp);
+            }
+
+            /* Only a live reading may raise a notification: a stale snapshot
+             * would re-announce a threshold the user was already told about. */
+            if (model.percent !== null && !model.stale)
+                this._maybeNotify(model.percent, model.resetsAt);
         }
 
         _render() {
@@ -213,12 +186,9 @@ var getUsageIndicatorClass = function (shell) {
             });
         }
 
-        _showError(reason, retryAfter = null) {
-            let retryAt = 0;
-            if (Errors.isRateLimit(reason)) {
-                this._backoffUntil = now() + Errors.backoffSeconds(retryAfter);
-                retryAt = this._backoffUntil;
-            }
+        /* The runtime could not be run or did not answer. Pausing the polling
+         * is the runtime's job, so all this does is say so. */
+        showError(reason, retryAt = 0) {
             const message = Errors.errorMessage(reason);
 
             /* A rate limit or network blip should not blank a working panel:

@@ -3,7 +3,9 @@
 #   make                                          show this help
 #   make install                                  everything (ai-config needs PROJECT)
 #   make install bash-scripts                     put bash/bin on your PATH
+#   make install ai-usage                         install the shared usage runtime on its own
 #   make install gnome-extension                  install the AI Usage GNOME Shell extension
+#                                                 (installs the runtime first)
 #   make install ai-config PROJECT=<dir>          deploy the Claude Code + Codex config into <dir>
 #   make install agentmemory                      the local memory stack for the agents
 #   make install bash-scripts gnome-extension     several components at once
@@ -13,6 +15,7 @@
 #
 #   make uninstall bash-scripts                   take bash/bin back off your PATH
 #   make uninstall gnome-extension                remove and disable that extension
+#   make uninstall ai-usage                       remove the shared runtime — the Godot Shell reads it too
 #   make uninstall agentmemory                    remove the stack, keep the memory
 
 SHELL := /bin/bash
@@ -25,10 +28,10 @@ EXT_DIR := $(EXT_ROOT)/$(UUID)
 
 PROJECT ?=
 
-COMPONENTS := bash-scripts ai-config gnome-extension agentmemory
+COMPONENTS := bash-scripts ai-config ai-usage gnome-extension agentmemory
 # Pre-rename component name — still accepted, routed to do-ai-config with a notice.
 DEPRECATED := claude-config
-UNINSTALLABLE := bash-scripts gnome-extension agentmemory
+UNINSTALLABLE := bash-scripts ai-usage gnome-extension agentmemory
 # The memory stack is the only component with a running state of its own, so it
 # is the only one start/stop mean anything for.
 STARTABLE := agentmemory
@@ -91,6 +94,7 @@ help:
 	@echo
 	@echo "  make install                                install everything"
 	@echo "  make install bash-scripts                   add bash/bin to PATH in your shell rc"
+	@echo "  make install ai-usage                       install the shared usage runtime on its own"
 	@echo "  make install gnome-extension                install the AI Usage GNOME Shell extension"
 	@echo "  make install ai-config PROJECT=<dir>        deploy the Claude Code + Codex config into <dir>"
 	@echo "  make install agentmemory                    local memory stack (Docker) + agent hooks"
@@ -104,6 +108,7 @@ help:
 	@echo
 	@echo "  make uninstall bash-scripts                 take bash/bin back off your PATH"
 	@echo "  make uninstall gnome-extension              remove and disable that extension"
+	@echo "  make uninstall ai-usage                     remove the shared runtime (the Shell reads it too)"
 	@echo "  make uninstall agentmemory                  remove the stack, keep the memory itself"
 	@echo
 	@echo "  Bare 'make install' and 'make uninstall' skip agentmemory: it is heavy,"
@@ -145,8 +150,17 @@ do-ai-config:
 do-claude-config: do-ai-config
 	@echo "Note: 'claude-config' is now 'ai-config' — it deploys the Codex config as well."
 
-## 3. Ubuntu (GNOME Shell) extension — Claude Code and Codex usage indicators.
-do-gnome-extension:
+## 3. Shared usage runtime — the one source of Claude and Codex usage data.
+##    Installed on its own because two clients read it: the GNOME extension
+##    below and the Godot Shell, which must not depend on an extension's
+##    private directory.
+do-ai-usage:
+	$(DEPLOY)/ai-usage.sh
+
+## 4. Ubuntu (GNOME Shell) extension — Claude Code and Codex usage indicators.
+##    The runtime goes in first and atomically, so the running panel never
+##    reads a half-written one.
+do-gnome-extension: do-ai-usage
 	$(DEPLOY)/gnome-extension.sh
 
 ## 4. Local memory stack — llama.cpp + iii-engine + agentmemory in Docker,
@@ -166,6 +180,11 @@ undo-agentmemory:
 
 undo-bash-scripts:
 	$(DEPLOY)/bash-scripts-uninstall.sh
+
+# Deliberately not run by `uninstall gnome-extension`: the Godot Shell reads
+# this runtime too, so removing it is asked for by name.
+undo-ai-usage:
+	$(DEPLOY)/ai-usage-uninstall.sh
 
 undo-gnome-extension:
 	-gnome-extensions disable $(UUID) 2>/dev/null

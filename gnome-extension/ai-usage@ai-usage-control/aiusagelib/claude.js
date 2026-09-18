@@ -1,63 +1,16 @@
-/* Claude Code provider: reads claude-usage-helper.py.
+/* Claude Code provider: identity only.
  *
- * The helper returns the session window plus, when present, the weekly
- * and model-scoped quotas. The bar tracks the 5-hour session — the
- * shortest window Claude reports.
+ * The parsing that used to live here moved into the shared Python runtime
+ * (design.md D2), so a change in Claude's API is now fixed once, in one
+ * language, for both this panel and the Godot Shell. What is left is what the
+ * panel calls this provider and which key it occupies in the usage document.
+ *
+ * Whether the CLI is set up here is no longer guessed from a credentials file
+ * either: the runtime reports `unavailable` for a CLI that is not logged in.
  */
 'use strict';
-
-const { GLib } = imports.gi;
-/* Loaded through the legacy importer under both shell generations: the
- * entry point puts the extension directory on imports.searchPath before
- * pulling this file in. See extension.js for why. */
-const Format = imports.aiusagelib.format;
-
-const CREDS_PATH = GLib.build_filenamev([GLib.get_home_dir(), '.claude', '.credentials.json']);
-
-function clamp(value) {
-    return Math.max(0, Math.min(100, Number(value) || 0));
-}
 
 var provider = {
     id: 'claude',
     title: 'Claude',
-    helper: 'claude-usage-helper.py',
-
-    /* The helper reads the OAuth token the claude CLI stores here; without
-     * that file there is nothing to show, so the indicator stays away. */
-    detect() {
-        return GLib.file_test(CREDS_PATH, GLib.FileTest.EXISTS);
-    },
-
-    parse(data) {
-        if (typeof data.percent !== 'number')
-            return null;
-
-        const percent = clamp(data.percent);
-        const resetsAt = Format.isoToUnix(data.resets_at);
-        const rows = ['Session (5 h): %d%% used, %s left (resets at %s)'.format(
-            Math.round(percent),
-            resetsAt ? Format.formatRemaining(resetsAt) : '?',
-            resetsAt ? Format.formatReset(resetsAt) : '?')];
-
-        if (data.seven_day_percent !== undefined) {
-            const weekReset = Format.isoToUnix(data.seven_day_resets_at);
-            rows.push('Week: %d%% used, resets %s'.format(
-                Math.round(clamp(data.seven_day_percent)),
-                weekReset ? Format.formatReset(weekReset) : '?'));
-        }
-
-        let suffix = null;
-        if (data.model_percent !== undefined) {
-            const name = data.model_name || 'model';
-            const modelReset = Format.isoToUnix(data.model_resets_at);
-            rows.push('%s: %d%% used, resets %s'.format(
-                name,
-                Math.round(clamp(data.model_percent)),
-                modelReset ? Format.formatReset(modelReset) : '?'));
-            suffix = ' · %s %d%%'.format(name, Math.round(clamp(data.model_percent)));
-        }
-
-        return { percent, resetsAt, stale: false, suffix, rows, note: null };
-    },
 };

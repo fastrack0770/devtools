@@ -15,8 +15,9 @@ Each ships its own deploy script in `deploy/`; the `Makefile` wraps all four.
 make                                            # list the components
 make install bash-scripts                       # 1. console utilities
 make install ai-config PROJECT=/path/to/project # 2. Claude Code + Codex configuration
-make install gnome-extension                    # 3. Ubuntu extension
-make install agentmemory                        # 4. local memory stack
+make install ai-usage                           # 3. shared usage runtime
+make install gnome-extension                    # 4. Ubuntu extension (installs 3 first)
+make install agentmemory                        # 5. local memory stack
 ```
 
 Components combine: `make install bash-scripts gnome-extension`. Bare `make install`
@@ -24,8 +25,10 @@ takes the first three, but skips the agent config unless `PROJECT` is set
 (`make install PROJECT=/path/to/project`). Every component is idempotent.
 
 `make uninstall bash-scripts` and `make uninstall gnome-extension` reverse the first
-and third; the agent config has no uninstaller, since by then its files are part
-of the target project.
+and fourth; the agent config has no uninstaller, since by then its files are part
+of the target project. Removing the extension deliberately leaves the shared usage
+runtime in place — the Godot Shell reads it too — so `make uninstall ai-usage` is a
+separate, explicit step.
 
 The memory stack is asked for by name and never comes along with a bare `make install`
 or `make uninstall`: it wants an NVIDIA GPU, downloads gigabytes and rewires both
@@ -136,6 +139,52 @@ Strips the `PATH` block back out of the same rc file, backing it up to
 
 ---
 
+# Shared usage runtime
+
+`ai-usage/` — the one source of Claude Code and Codex usage figures on this machine.
+Two clients read it: the GNOME Shell extension below, and the Godot Shell's in-world
+HUD, which needs the same numbers when the system panel is hidden behind a fullscreen
+world.
+
+It installs to a stable user-level path, deliberately outside the extension's own
+directory: a UUID and an extension's internal layout are not an interface another
+application can build on, and removing the extension must not take the Shell's data
+source with it.
+
+```sh
+make install ai-usage                 # or: deploy/ai-usage.sh
+~/.local/libexec/ai-usage-control/ai-usage        # prints one JSON document
+~/.local/libexec/ai-usage-control/ai-usage --force  # skip the freshness window
+```
+
+- **One versioned contract.** stdout carries exactly one schema-v1 JSON document —
+  diagnostics go to stderr — with a `providers` map in which each provider carries its
+  own state (`ok`, `stale`, `unavailable`, `error`), source, and ordered limit windows.
+  A partial success is an ordinary valid answer: one provider failing never blanks the
+  other. Both renderers format that same document; neither parses a vendor's reply.
+- **One fetch per minute, shared.** A reading younger than 60 seconds is served from
+  `~/.cache/ai-usage-control` without an external request, and a file lock merges
+  concurrent callers into a single upstream fetch. Two clients polling the same minute
+  therefore cost one request per provider, not two.
+- **Failures degrade, they do not blank.** The last good reading is kept separately from
+  the last failure, so a provider that fails after succeeding keeps its previous windows,
+  marked stale and aged. A rate limit's `Retry-After` is stored as an absolute time and
+  honoured across processes, capped at an hour, defaulting to five minutes.
+- **No credentials leave the helpers.** The document holds display data only — never an
+  access token, refresh token, API key or the contents of a credential file. The Godot
+  Shell is given no credentials at all. `ai-usage/tests/test_security.py` plants marker
+  tokens in helper replies and fails if one reaches stdout, stderr or the cache.
+- **Overrides for development:** `AI_USAGE_BIN` (the executable a client calls),
+  `AI_USAGE_PREFIX` (where it installs), `AI_USAGE_CACHE_DIR`, `AI_USAGE_HELPER_DIR`.
+
+Tests: `cd ai-usage && python3 -m unittest discover -s tests -t .` — no third-party
+packages needed.
+
+If the runtime is not installed, both clients degrade rather than fail: the panel says
+so and the Shell shows usage as unavailable and carries on.
+
+---
+
 # GNOME Shell extension
 
 `gnome-extension/ai-usage@ai-usage-control` — top-panel indicators showing how much of
@@ -147,9 +196,12 @@ Supports **Claude Code** and **Codex**. There is no settings UI: a bar appears w
 CLI is logged in and disappears when it is not, rechecked every minute.
 
 Requires GNOME Shell 42 (Ubuntu 22.04), `python3` and at least one logged-in CLI. The
-Claude helper reads (and, when the token expires, refreshes) `~/.claude/.credentials.json`;
-the Codex helper never touches `~/.codex/auth.json` — it asks `codex app-server` instead,
-falling back to a dimmed, explicitly stale reading from the session journal. See
+numbers come from the shared usage runtime above, which `make install gnome-extension`
+installs first; the extension itself neither talks to a vendor nor holds a credential.
+Inside that runtime the Claude helper reads (and, when the token expires, refreshes)
+`~/.claude/.credentials.json`; the Codex helper never touches `~/.codex/auth.json` — it
+asks `codex app-server` instead, falling back to a dimmed, explicitly stale reading from
+the session journal. See
 [gnome-extension/README.md](gnome-extension/README.md) for the data sources, the security
 notes, the tests and debugging commands.
 

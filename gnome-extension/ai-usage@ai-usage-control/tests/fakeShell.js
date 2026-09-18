@@ -203,6 +203,7 @@ var loadIndicatorFactory = function (extensionDir, shell) {
         aiusagelib: {
             format: imports.aiusagelib.format,
             errors: imports.aiusagelib.errors,
+            model: imports.aiusagelib.model,
         },
     };
 
@@ -210,4 +211,72 @@ var loadIndicatorFactory = function (extensionDir, shell) {
     const factory = new Function(
         'imports', '%s\nreturn getUsageIndicatorClass;'.format(source));
     return factory(fakeImports)(shell);
+};
+
+/* Evaluate core.js with `imports` bound to stand-ins and hand back the
+ * Controller. The indicator class and the runtime bridge are both replaced:
+ * what is under test is which reply is allowed to reach the panel, not how a
+ * bar is drawn or how a subprocess is spawned. */
+var loadControllerFactory = function (extensionDir, IndicatorClass, usage) {
+    const path = GLib.build_filenamev([extensionDir, 'aiusagelib', 'core.js']);
+    const [ok, bytes] = GLib.file_get_contents(path);
+    if (!ok)
+        throw new Error('cannot read %s'.format(path));
+
+    const fakeImports = {
+        gi: { GLib },
+        aiusagelib: {
+            indicator: { getUsageIndicatorClass: () => IndicatorClass },
+            model: imports.aiusagelib.model,
+            usage,
+            claude: imports.aiusagelib.claude,
+            codex: imports.aiusagelib.codex,
+        },
+    };
+
+    const source = new TextDecoder().decode(bytes);
+    const factory = new Function('imports', source + '\nreturn Controller;');
+    return factory(fakeImports);
+};
+
+/* A stand-in indicator that only records what it was told. */
+var makeFakeIndicator = function (created) {
+    return class FakeIndicator {
+        constructor(provider, onForceRefresh) {
+            this.provider = provider;
+            this.onForceRefresh = onForceRefresh;
+            this.entries = [];
+            this.errors = [];
+            this.destroyed = false;
+            created.push(this);
+        }
+
+        update(entry) {
+            this.entries.push(entry);
+        }
+
+        showError(reason) {
+            this.errors.push(reason);
+        }
+
+        destroy() {
+            this.destroyed = true;
+        }
+    };
+};
+
+/* A stand-in runtime bridge: every fetch is parked so the test decides the
+ * order the replies come back in. */
+var makeFakeUsage = function () {
+    const pending = [];
+    return {
+        calls: pending,
+        fetch(force, callback) {
+            pending.push({ force, callback });
+        },
+        /* Answer call `index` with `document`, whenever the test likes. */
+        answer(index, document, error) {
+            pending[index].callback(document || null, error || null);
+        },
+    };
 };

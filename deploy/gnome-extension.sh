@@ -13,6 +13,11 @@
 # installs the one matching the running shell under the name it expects.
 # Everything else is shared verbatim.
 #
+# The usage data itself no longer comes from this directory: the extension calls
+# the shared runtime installed by deploy/ai-usage.sh, which the Godot Shell reads
+# too. `make install gnome-extension` puts that runtime in first; this script
+# checks it is there rather than installing it, so the two stay separately owned.
+#
 # The extension used to ship under the UUID claude-usage@claude-usage-control.
 # A UUID is the install identity, so the renamed package installs alongside
 # the old one instead of replacing it — hence the removal step below, without
@@ -88,8 +93,9 @@ mkdir -p "$DEST/aiusagelib"
 cp -f "$SRC"/metadata.json "$SRC"/stylesheet.css "$DEST"/
 cp -f "$SRC/$ENTRY" "$DEST/extension.js"
 cp -f "$SRC"/aiusagelib/*.js "$DEST/aiusagelib/"
-cp -f "$SRC"/claude-usage-helper.py "$SRC"/codex-usage-helper.py "$DEST"/
-chmod +x "$DEST/claude-usage-helper.py" "$DEST/codex-usage-helper.py"
+
+# Helpers that earlier versions installed here; the shared runtime owns them now.
+rm -f "$DEST/claude-usage-helper.py" "$DEST/codex-usage-helper.py"
 
 echo "Installed to $DEST (entry point: $ENTRY${SHELL_MAJOR:+, GNOME Shell $SHELL_MAJOR})"
 
@@ -107,6 +113,16 @@ fi
 echo
 echo "IMPORTANT (Wayland): GNOME Shell only picks up a new extension after you"
 echo "log out and log back in. It will be active right after that login."
+
+# --- the shared runtime this extension reads ---------------------------
+RUNTIME="${AI_USAGE_BIN:-$HOME/.local/libexec/ai-usage-control/ai-usage}"
+if [ -x "$RUNTIME" ]; then
+    echo "Usage data comes from $RUNTIME (shared with the Godot Shell)."
+else
+    echo
+    echo "WARNING: the shared usage runtime is not installed at $RUNTIME."
+    echo "         The panel will show no data until it is:  make install ai-usage"
+fi
 
 # A provider's bar only appears when that CLI is logged in, so an install
 # with neither one present shows an empty panel. Say so here rather than

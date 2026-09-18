@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "generated_at": 1757600000,
+  "providers": {
+    "claude": {
+      "state": "unavailable", "source": null, "fetched_at": null,
+      "next_retry_at": null, "error": "no_credentials", "age_seconds": 0, "windows": []
+    }
+  }
+}
