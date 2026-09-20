@@ -18,7 +18,8 @@ const Indicator = imports.aiusagelib.indicator;
 const Model = imports.aiusagelib.model;
 const Usage = imports.aiusagelib.usage;
 
-const POLL_SECONDS = 60;
+// The usage endpoint rate-limits; polling once a minute produced regular 429s.
+const POLL_SECONDS = 120;
 
 const PROVIDERS = [
     imports.aiusagelib.claude.provider,

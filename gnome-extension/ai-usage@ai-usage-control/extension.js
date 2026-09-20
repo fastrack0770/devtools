@@ -7,7 +7,7 @@
  * There is no settings UI on purpose. A provider's bar appears when that
  * CLI is installed and logged in and disappears when it is not, rechecked
  * on every poll — so logging in to either tool brings its bar up within a
- * minute, with nothing to configure.
+ * couple of minutes, with nothing to configure.
  *
  * ---------------------------------------------------------------------
  * This is the GNOME 42 entry point. GNOME 45 rewrote the shell's JS as ES

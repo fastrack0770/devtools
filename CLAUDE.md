@@ -55,6 +55,13 @@ Quota rationale: see `docs/adr/0002-parallel-dev-owns-the-delegate-quota.md`.
   only the skill-resolved quota applies.
 - **A single sequential read-only delegate** (a codex second opinion, an `Explore`
   lookup) needs neither the skill nor a plan.
+- **Never launch a delegate with its output discarded.** `> /dev/null 2>&1` (or a
+  backgrounded call whose streams go nowhere) destroys the only record of what the
+  session did — for `run_codex.sh`, stdout is the final report and stderr carries the
+  whole run and every error. Redirect each stream to a file you can read afterwards
+  (`> <id>.report 2> <id>.err`), or pipe stdout into `plan_tool.py done` and send
+  stderr to a file. When diagnosis is missing, read the script's own transcript under
+  `<git-dir>/parallel-dev/logs/` before relaunching anything.
 - Launch plan-free delegates read-only: prefer enforced forms (`Explore`/`Plan`
   agent types, `run_codex.sh` without `--write` — its default read-only mode is the
   one for reviews and second opinions); only when a general agent is needed,
