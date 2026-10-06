@@ -6,7 +6,7 @@
 #   - .claude/skills/           (promoted skills + nested scripts/references/templates)
 #   - .claude/commands/         (opsx slash commands, if present in this repo)
 #   - .claude/opsx/             (provider-neutral opsx docs the explore skills point at)
-#   - .claude/settings.json     (hook wiring; uses CLAUDE_PROJECT_DIR, so it's portable)
+#   - .claude/settings.json     (hook wiring + optional telemetry disabled)
 #   - .codex/skills/            (adapted openspec workflow + promoted methodology skills)
 #   - scripts/hooks/*.py        (skill-routing hooks)
 #   - CLAUDE.md                 (working rules, in a marker-delimited managed block)
@@ -25,10 +25,15 @@
 # project: ${CLAUDE_CONFIG_DIR:-~/.claude}/skills and ${CODEX_HOME:-~/.codex}/skills, and
 # wires the skill-routing hooks (copied to ~/.claude/hooks/devtools/) into the user-level
 # settings.json. The rules files stay per-project. Only the skills and hook entries this
-# repo names are replaced; anything else in those places is left alone.
+# repo names are replaced; anything else in those places is left alone. Both modes
+# merge the telemetry opt-outs into settings.json and switch off Codex analytics and
+# feedback upload in ${CODEX_HOME:-~/.codex}/config.toml, including on repeat installs.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Codex analytics is per installation, not per project, so both modes switch it off in
+# the user-level config.
+CODEX_CONFIG="${CODEX_HOME:-$HOME/.codex}/config.toml"
 
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <project-dir> | --global" >&2
@@ -152,6 +157,8 @@ if [ "$1" = "--global" ]; then
 
     mkdir -p "$CLAUDE_DIR/hooks/devtools"
     cp "$REPO_ROOT/scripts/hooks/"*.py "$CLAUDE_DIR/hooks/devtools/"
+    python3 "$REPO_ROOT/deploy/claude-privacy.py" "$CLAUDE_DIR/settings.json"
+    python3 "$REPO_ROOT/deploy/codex-privacy.py" "$CODEX_CONFIG"
     wire_global_hooks "$CLAUDE_DIR/settings.json"
     exit 0
 fi
@@ -189,11 +196,13 @@ tidy_skills "$DEST/.claude/skills" "$DEST/.codex/skills"
 rm -rf "$DEST/scripts/hooks/__pycache__"
 
 if [ -f "$DEST/.claude/settings.json" ]; then
-    echo "Note: $DEST/.claude/settings.json already exists — left untouched."
+    echo "Note: $DEST/.claude/settings.json already exists — preserving its hooks and custom settings."
     echo "      Merge the 'hooks' block from $REPO_ROOT/.claude/settings.json manually."
 else
     cp "$REPO_ROOT/.claude/settings.json" "$DEST/.claude/settings.json"
 fi
+python3 "$REPO_ROOT/deploy/claude-privacy.py" "$DEST/.claude/settings.json"
+python3 "$REPO_ROOT/deploy/codex-privacy.py" "$CODEX_CONFIG"
 
 # Rules files, kept in marker-delimited managed blocks so re-runs update them in place.
 #
