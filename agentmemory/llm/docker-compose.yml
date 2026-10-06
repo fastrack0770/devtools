@@ -1,7 +1,7 @@
 # Локальный стек: llama.cpp (Qwen3-4B, CUDA) + agentmemory + движок iii.
 #
 #   docker compose up -d --build     поднять
-#   docker compose stop              остановить (после ребута НЕ поднимется)
+#   docker compose stop              stop
 #   docker compose down              снести контейнеры
 #   docker compose logs -f llama     логи
 #
@@ -17,17 +17,26 @@
 # отличие от репозиторной копии = чей-то ручной патч, и установщик о нём
 # скажет, а не затрёт молча.
 #
-# ── Пункт 3 ТЗ: автозапуск после ребута ────────────────────────────────
-# `restart: unless-stopped` — контейнер переживает ребут ровно тогда,
-# когда на момент выключения был запущен; явный `stop`/`down` этот флаг
-# снимает. Держится на docker.service, который уже enabled в systemd.
+# ── Start manually only ───────────────────────────────────────────────
+# `restart: on-failure` restarts a failed container (nonzero exit code,
+# including OOM kill 137) with increasing delays between attempts.
+# The stack does not start after a reboot or docker.service restart; run
+# `make start` or `docker compose up -d` manually. Previously,
+# `unless-stopped` kept the stack running after a reboot and occupied the GPU.
 #
-# ── Требование по RAM: суммарно не больше 8 ГБ ─────────────────────────
-# mem_limit:  llama 4G + agentmemory 2G + iii-engine 2G = ровно 8G.
-# memswap_limit == mem_limit запрещает контейнеру добирать своп: без
-# этого cgroup позволил бы выйти за лимит по RSS за счёт swap, и
-# «8 ГБ» перестали бы быть 8 ГБ. Превышение лимита = OOM-kill процесса
-# в контейнере, а не деградация всей машины (на хосте всего 14 ГБ).
+# ── RAM budget: 9 GB, reallocated based on measured use ───────────────
+# Previously, llama 4G + agentmemory 2G + iii-engine 2G = exactly 8G.
+# After 7 hours: llama used 3.35G of 4G (84%, with 37 consecutive OOM
+# restarts), iii-engine 1.0G of 2G, and agentmemory 0.15G of 2G.
+# The limits did not match actual memory use, so they are now:
+#   llama 6G + iii-engine 2G + agentmemory 1G = 9G.
+# This exceeds the original cap by 1 GB to prevent llama and iii-engine
+# from crashing. If 8 GB is a hard cap, reduce llama's --ctx-size from
+# 16384 to 8192 and set its limit to 5G instead.
+# memswap_limit == mem_limit prevents the container from using swap.
+# Otherwise, the cgroup could exceed the RSS limit through swap, defeating
+# the budget. Exceeding the limit OOM kills the container process instead
+# of degrading the entire machine (the host has only 14 GB of RAM).
 #
 # ── ПЕРЕД первым запуском ──────────────────────────────────────────────
 # Нужен nvidia-container-toolkit и остановленный нативный движок (иначе
@@ -54,12 +63,15 @@ services:
     # ~/.agentmemory/.env, который читает хостовой CLI. Поэтому и там, и
     # там, и здесь — одна переменная LLM_MODEL из versions.env.
     #
-    # --n-gpu-layers 99 = вся модель в VRAM. Замер на этой карте (8151 MiB):
-    # 4B Q4_K_M при ctx 16384 занимает ~5.0 ГиБ (62%), остаётся ~3 ГиБ на
-    # десктоп. Для сравнения, замер 8B Q4_K_M на том же ctx — 7012 MiB
-    # (86%), свободно 696 MiB: меньше, чем берёт графический стек.
-    # --parallel 1 фиксирует один слот: KV-кэш считается на 16384 токена,
-    # а не на n_parallel*ctx. Явно, чтобы не зависеть от дефолта образа.
+    # --n-gpu-layers 20 offloads 20 of Qwen3-4B's 36 layers; the CPU runs
+    # the rest, leaving more GPU capacity for graphical applications.
+    # Previously, --n-gpu-layers 99 kept the whole model in VRAM.
+    # Measurement on an 8151 MiB GPU:
+    # 4B Q4_K_M at ctx 16384 uses ~5.0 GiB (62%), leaving ~3 GiB for the
+    # desktop. By comparison, 8B Q4_K_M at the same ctx uses 7012 MiB
+    # (86%), leaving 696 MiB: less than the graphical stack needs.
+    # --parallel 1 fixes the slot count at one: the KV cache covers 16384
+    # tokens rather than n_parallel*ctx, independent of the image default.
     command: >
       --hf-repo ${LLM_MODEL}
       --alias ${LLM_MODEL}
@@ -67,9 +79,11 @@ services:
       --port 8080
       --ctx-size 16384
       --parallel 1
-      --n-gpu-layers 99
+      --n-gpu-layers 20
       --jinja
       --api-key local-llamacpp
+      --cache-ram 1024
+      --reasoning off
 
     # --api-key: без него llama-server сам предупреждает в логе, что
     # CORS открыт на '*' и ключа нет. Значение совпадает с
@@ -80,6 +94,15 @@ services:
     # установщик никогда не перезаписывает — общая переменная тут
     # создала бы иллюзию синхронизации, которой нет.
     # /health от проверки ключа освобождён — healthcheck ниже работает.
+    #
+    # --reasoning off: Qwen3 reasons by default, and agentmemory's
+    # /no_think does not reach compression, summary, or consolidation prompts.
+    # With max_tokens 300, all 300 tokens went to reasoning_content and
+    # content stayed empty; compression took ~1200 tokens instead of ~300.
+    #
+    # --cache-ram 1024: the default prompt cache in host RAM is 8192 MiB,
+    # above mem_limit 6g. It grew with each request until an OOM kill.
+    # A 1 GiB cache keeps the process below the limit.
 
     environment:
       LLAMA_CACHE: /models          # куда --hf-repo кладёт .gguf
@@ -93,9 +116,11 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
-    # Веса лежат в VRAM, хостовой RAM нужен под mmap файла и KV-скретч.
-    mem_limit: 4g
-    memswap_limit: 4g
+    # The weights live in VRAM, but the process uses much more host RAM
+    # than expected from mmap and KV scratch space: kernel OOM logs show
+    # 4.1 GB anon-rss (CUDA host buffers). A 4G limit guarantees an OOM kill.
+    mem_limit: 6g
+    memswap_limit: 6g
 
     deploy:
       resources:
@@ -115,7 +140,7 @@ services:
       # стартах healthy наступает за секунды.
       start_period: 30m
 
-    restart: unless-stopped
+    restart: on-failure
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
@@ -143,6 +168,13 @@ services:
     # данным, поэтому подстраиваем процесс под каталог, а не наоборот.
     user: "${HOST_UID}:${HOST_GID}"
 
+    # After rebuildIndex, graph-extract, and consolidation, the engine
+    # retains allocated memory. Limit glibc malloc arenas and return free
+    # pages to the kernel more often.
+    environment:
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+
     volumes:
       - ${HOST_HOME}/llm/data:/data
       - ./iii-config.docker.yaml:/app/config.yaml:ro
@@ -161,7 +193,7 @@ services:
     mem_limit: 2g
     memswap_limit: 2g
 
-    restart: unless-stopped
+    restart: on-failure
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
@@ -184,6 +216,21 @@ services:
     # которого в образе нет).
     command: ["--no-engine", "--verbose"]
 
+    # Node as PID 1 did not exit cleanly on SIGTERM: Docker waited 10 s,
+    # sent SIGKILL, and on-failure treated exit 137 as a crash. The wrapper
+    # forwards the signal to the worker and exits successfully on a normal
+    # stop; a real nonzero exit still propagates and triggers a restart.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        agentmemory "$$@" &
+        pid=$$!
+        trap 'kill -TERM $$pid 2>/dev/null; wait $$pid; exit 0' TERM INT
+        wait $$pid
+        exit $$?
+      - agentmemory
+
     environment:
       HOME: ${HOST_HOME}
       # process.env перебивает ~/.agentmemory/.env — в самом пакете
@@ -204,7 +251,22 @@ services:
       AGENTMEMORY_LLM_NOTHINK: "1"
       # Держим heap ниже mem_limit: если V8 упрётся в предел раньше
       # cgroup, получим внятный OOM внутри node вместо SIGKILL от ядра.
-      NODE_OPTIONS: --max-old-space-size=1536
+      # 768 MB is about 75% of mem_limit 1g; the rest is for native memory
+      # and buffers outside the heap. Change this together with mem_limit below.
+      NODE_OPTIONS: --max-old-space-size=768
+      # LLM response cap (default 4096). Compression uses ~300 tokens and
+      # summaries fewer than 1000; this cap only prevents runaway output.
+      MAX_TOKENS: "1536"
+      # Summaries send 6 chunks concurrently by default, but llama has
+      # one slot (--parallel 1); extra requests only queue and time out.
+      SUMMARIZE_CHUNK_CONCURRENCY: "1"
+      # LLM compression of each observation cannot keep up with the event
+      # stream, leaving uncompressed observations out of search. Heuristic
+      # compression indexes them all; the LLM still handles summaries,
+      # graph extraction, and consolidation.
+      AGENTMEMORY_AUTO_COMPRESS: "false"
+      # Full corpus consolidation at most once an hour (default: 5 min).
+      AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS: "3600000"
 
     volumes:
       # .env, preferences.json, snapshots, pid-файлы. Пути слева и справа
@@ -231,13 +293,13 @@ services:
       iii-engine:
         condition: service_started
 
-    mem_limit: 2g
-    memswap_limit: 2g
+    mem_limit: 1g
+    memswap_limit: 1g
 
     stdin_open: false
     tty: false
 
-    restart: unless-stopped
+    restart: on-failure
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}

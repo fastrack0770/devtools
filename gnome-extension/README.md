@@ -20,7 +20,8 @@ Every number is the **used** share of a limit, not the remainder.
   installing at 85 % announces 90 % rather than replaying 20–80 at once.
 - **Click an indicator** for a menu with every window (percent, time left,
   reset time), the extras that provider exposes, and a *Refresh now* button.
-  Polling interval: 60 s.
+  Polling interval: 120 s — the usage endpoint rate-limits, and polling it
+  once a minute earned regular 429s.
 - **Failure handling**: a rate limit or network blip keeps the last known
   numbers on screen, dimmed and marked stale in the menu, instead of blanking
   the panel. After an HTTP 429 — from either the usage or the token endpoint —
@@ -54,9 +55,9 @@ with `make install ai-usage`.
 
 There is no preferences window. A provider's bar appears when that CLI is
 installed and logged in, and disappears when it is not — rechecked on every
-poll, so logging in to either tool brings its bar up within a minute. A CLI that
-is not set up is reported by the runtime as `unavailable`, and an unavailable
-provider gets no empty indicator.
+poll, so logging in to either tool brings its bar up within a couple of minutes.
+A CLI that is not set up is reported by the runtime as `unavailable`, and an
+unavailable provider gets no empty indicator.
 
 ## Requirements
 

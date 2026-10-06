@@ -79,7 +79,8 @@ and templates), `.claude/commands` (the `opsx` slash commands), `.claude/opsx`,
 the Codex-parity skill set, `.claude/settings.json`, `scripts/hooks/*.py`, `CLAUDE.md` and
 `AGENTS.md` into `<project-dir>`. Executable bits on skill scripts are restored after the
 copy and any `__pycache__`/`*.pyc` is stripped. If the project already has a
-`.claude/settings.json`, it is left untouched — merge the `hooks` block manually. Running
+`.claude/settings.json`, its hooks and custom settings are preserved — merge the `hooks`
+block manually. Both installation modes merge the privacy settings described below. Running
 `openspec init` in the target project will regenerate the `opsx` commands if you need a
 newer version.
 
@@ -98,6 +99,37 @@ wiring is merged into the user-level `settings.json` (other keys and hooks untou
 invalid `settings.json` is left alone). The global hook stays silent in a project whose own
 `.claude/settings.json` wires the same script, so nothing fires twice. The rules files stay
 per-project.
+
+Every install, including a repeat install, disables Claude Code's optional telemetry,
+error reports and feedback submission by setting `env.DISABLE_TELEMETRY`,
+`env.DISABLE_ERROR_REPORTING` and `env.DISABLE_FEEDBACK_COMMAND` to `"1"`. Project installs
+apply these to the project's `.claude/settings.json`; `--global` applies them to
+`${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`. Other environment variables are preserved.
+Invalid JSON or a non-object `env` stops installation without overwriting that settings
+file. These flags keep automatic updates enabled; disabling telemetry can affect Remote
+Control. They do not stop the prompts and tool results needed by the cloud model from
+being sent to the provider or change the account's training preferences. See
+[Claude Code data usage](https://code.claude.com/docs/en/data-usage).
+
+Every install also switches off Codex's usage analytics (the `analytics-events` uploads to
+`chatgpt.com`) and feedback upload by setting `[analytics] enabled = false` and
+`[feedback] enabled = false`. Codex analytics belongs to the installation, not to a
+project, so both modes write them to `${CODEX_HOME:-~/.codex}/config.toml`. The file is
+edited in place: comments and other settings are kept, a `true` there is overwritten. A
+config.toml that does not parse, or one that defines these keys in a form the line edit
+cannot reach (an inline table such as `analytics = { … }`), stops installation without
+overwriting it. Like the Claude flags, this does not stop prompts and tool results from
+reaching the model, nor automatic updates.
+
+To reapply just the privacy settings without reinstalling skills or hooks:
+
+```sh
+python3 deploy/claude-privacy.py "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+python3 deploy/codex-privacy.py "${CODEX_HOME:-$HOME/.codex}/config.toml"
+```
+
+Restart Claude Code and Codex sessions after applying the settings. Installer regression checks:
+`python3 -m unittest discover -s deploy/tests -v`.
 
 Two caveats: a personal Claude skill shadows a project skill of the same name, so re-run
 `--global` after updating skills or a stale copy wins; and the few skills that point at
@@ -243,7 +275,9 @@ extension in place. Remove it with `make uninstall gnome-extension`.
 both agents capture what a session does, a local LLM compresses it, and the next session
 starts with the relevant parts already in context. Nothing leaves the machine.
 
-Three containers, ~8 GB of RAM between them, all on loopback:
+Three containers, up to 9 GB of RAM between them, all on loopback. They restart
+after a process failure, but not after a reboot; use `make start` when you want the
+GPU-backed stack:
 
 | Service | Image | What it does |
 |---|---|---|
